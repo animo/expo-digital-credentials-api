@@ -1,9 +1,9 @@
-import { useEvent } from 'expo';
-import DigitalCredentialsApi, { DigitalCredentialsApiView } from 'expo-digital-credential-api';
-import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { useEvent } from 'expo'
+import DigitalCredentialsApi from 'expo-digital-credential-api'
+import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 
 export default function App() {
-  const onChangePayload = useEvent(DigitalCredentialsApi, 'onChange');
+  const onChangePayload = useEvent(DigitalCredentialsApi, 'onChange')
 
   return (
     <SafeAreaView style={styles.container}>
@@ -19,23 +19,16 @@ export default function App() {
           <Button
             title="Set value"
             onPress={async () => {
-              await DigitalCredentialsApi.setValueAsync('Hello from JS!');
+              await DigitalCredentialsApi.setValueAsync('Hello from JS!')
             }}
           />
         </Group>
         <Group name="Events">
           <Text>{onChangePayload?.value}</Text>
         </Group>
-        <Group name="Views">
-          <DigitalCredentialsApiView
-            url="https://www.example.com"
-            onLoad={({ nativeEvent: { url } }) => console.log(`Loaded: ${url}`)}
-            style={styles.view}
-          />
-        </Group>
       </ScrollView>
     </SafeAreaView>
-  );
+  )
 }
 
 function Group(props: { name: string; children: React.ReactNode }) {
@@ -44,7 +37,7 @@ function Group(props: { name: string; children: React.ReactNode }) {
       <Text style={styles.groupHeader}>{props.name}</Text>
       {props.children}
     </View>
-  );
+  )
 }
 
 const styles = {
@@ -70,4 +63,4 @@ const styles = {
     flex: 1,
     height: 200,
   },
-};
+}

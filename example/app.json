@@ -23,8 +23,6 @@
       },
       "package": "id.animo.digitalcredentials.example"
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": ["../app.plugin.js"]
   }
 }

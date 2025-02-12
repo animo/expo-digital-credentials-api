@@ -55,3 +55,6 @@ yarn-error.log
 
 # Expo
 .expo/*
+
+example/android
+example/ios
