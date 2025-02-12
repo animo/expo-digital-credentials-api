@@ -1,0 +1,44 @@
+{
+  "name": "expo-digital-credential-api",
+  "version": "0.1.0",
+  "description": "Expo wrapper around Android Digital Credentials API",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "build": "expo-module build",
+    "clean": "expo-module clean",
+    "lint": "expo-module lint",
+    "test": "expo-module test",
+    "prepare": "expo-module prepare",
+    "prepublishOnly": "expo-module prepublishOnly",
+    "expo-module": "expo-module",
+    "open:ios": "xed example/ios",
+    "open:android": "open -a \"Android Studio\" example/android"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "expo-digital-credential-api",
+    "DigitalCredentialsApi"
+  ],
+  "repository": "https://github.com/animo/expo-digital-credentials-api",
+  "bugs": {
+    "url": "https://github.com/animo/expo-digital-credentials-api/issues"
+  },
+  "author": "Animo <contact@animo.id> (animo)",
+  "license": "MIT",
+  "homepage": "https://github.com/animo/expo-digital-credentials-api#readme",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "expo-module-scripts": "^4.0.3",
+    "expo": "~52.0.0",
+    "react-native": "0.76.0"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
+}
