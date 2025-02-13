@@ -12,7 +12,6 @@
     "style:fix": "biome check --write --unsafe",
     "types:check": "pnpm build:plugin --noEmit && pnpm build:module --noEmit",
     "expo-module": "expo-module",
-    "open:ios": "xed example/ios",
     "open:android": "open -a \"Android Studio\" example/android"
   },
   "keywords": [

@@ -1,4 +1,4 @@
-import { type ConfigPlugin, withAndroidManifest } from '@expo/config-plugins'
+import { type ConfigPlugin, withAndroidManifest, withProjectBuildGradle } from '@expo/config-plugins'
 import type { ManifestIntentFilter } from '@expo/config-plugins/build/android/Manifest'
 
 const GET_CREDENTIAL_ACTION = 'androidx.credentials.registry.provider.action.GET_CREDENTIAL'
@@ -32,14 +32,19 @@ const withDigitalCredentialsApiAndroidManifest: ConfigPlugin = (config) =>
       )
     }
 
-    if (!activity['intent-filter']) {
-      activity['intent-filter'] = [
-        {
-          action: [],
-        },
-      ]
+    if (!activity['intent-filter']) activity['intent-filter'] = []
+    let intentFilter = activity['intent-filter'].find(
+      (intentFilter) =>
+        hasAction(intentFilter, GET_CREDENTIALS_ACTION) || hasAction(intentFilter, GET_CREDENTIAL_ACTION)
+    )
+
+    if (!intentFilter) {
+      intentFilter = {
+        action: [],
+      }
+
+      activity['intent-filter'].push(intentFilter)
     }
-    const [intentFilter] = activity['intent-filter']
 
     if (!hasAction(intentFilter, GET_CREDENTIALS_ACTION)) {
       addAction(intentFilter, GET_CREDENTIALS_ACTION)
@@ -52,8 +57,22 @@ const withDigitalCredentialsApiAndroidManifest: ConfigPlugin = (config) =>
     return pluginConfig
   })
 
+const { withAppBuildGradle } = require('expo/config-plugins')
+
+const withCustomAppBuildGradle: ConfigPlugin = (config) => {
+  return withProjectBuildGradle(config, async (config) => {
+    config.modResults.contents = config.modResults.contents.replace(
+      `'org.jetbrains.kotlin:kotlin-gradle-plugin'`,
+      `"org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"`
+    )
+
+    return config
+  })
+}
+
 export const withAndroidDigitalCredentialsApi: ConfigPlugin = (config) => {
-  const newConfig = withDigitalCredentialsApiAndroidManifest(config)
+  let newConfig = withDigitalCredentialsApiAndroidManifest(config)
+  newConfig = withCustomAppBuildGradle(newConfig)
 
   return newConfig
 }

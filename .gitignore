@@ -39,10 +39,6 @@ android.iml
 android/app/libs
 android/keystores/debug.keystore
 
-# Cocoapods
-#
-example/ios/Pods
-
 # Ruby
 example/vendor/
 
@@ -57,4 +53,3 @@ yarn-error.log
 .expo/*
 
 example/android
-example/ios

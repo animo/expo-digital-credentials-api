@@ -1,2 +1,2 @@
-export { default } from './DigitalCredentialsApiModule'
 export * from './DigitalCredentialsApi.types'
+export { registerCredentials } from './api'

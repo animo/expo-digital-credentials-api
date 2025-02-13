@@ -1,30 +1,20 @@
-import { useEvent } from 'expo'
-import DigitalCredentialsApi from 'expo-digital-credential-api'
+// import { useEvent } from 'expo'
+import { registerCredentials } from 'expo-digital-credential-api'
 import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 
 export default function App() {
-  const onChangePayload = useEvent(DigitalCredentialsApi, 'onChange')
+  // const onChangePayload = useEvent(DigitalCredentialsApi, 'onChange')
+
+  const register = () =>
+    registerCredentials({ credentials: [] })
+      .then((success) => console.log(success))
+      .catch((error) => console.error(error))
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.container}>
-        <Text style={styles.header}>Module API Example</Text>
-        <Group name="Constants">
-          <Text>{DigitalCredentialsApi.PI}</Text>
-        </Group>
-        <Group name="Functions">
-          <Text>{DigitalCredentialsApi.hello()}</Text>
-        </Group>
-        <Group name="Async functions">
-          <Button
-            title="Set value"
-            onPress={async () => {
-              await DigitalCredentialsApi.setValueAsync('Hello from JS!')
-            }}
-          />
-        </Group>
-        <Group name="Events">
-          <Text>{onChangePayload?.value}</Text>
+        <Group name="Digital Credentials API">
+          <Button title="Register Credentials" onPress={register} />
         </Group>
       </ScrollView>
     </SafeAreaView>
@@ -41,10 +31,6 @@ function Group(props: { name: string; children: React.ReactNode }) {
 }
 
 const styles = {
-  header: {
-    fontSize: 30,
-    margin: 20,
-  },
   groupHeader: {
     fontSize: 20,
     marginBottom: 20,
@@ -58,9 +44,5 @@ const styles = {
   container: {
     flex: 1,
     backgroundColor: '#eee',
-  },
-  view: {
-    flex: 1,
-    height: 200,
   },
 }
