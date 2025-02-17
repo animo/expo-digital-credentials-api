@@ -1,2 +1,7 @@
 export * from './DigitalCredentialsApi.types'
-export { registerCredentials } from './api'
+export {
+  registerCredentials,
+  getRequest,
+  sendErrorResponse,
+  sendResponse,
+} from './api'

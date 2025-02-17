@@ -1,11 +1,15 @@
-import { type ConfigPlugin, withAndroidManifest, withProjectBuildGradle } from '@expo/config-plugins'
+import { AndroidConfig, type ConfigPlugin, withAndroidManifest, withProjectBuildGradle } from '@expo/config-plugins'
 import type { ManifestIntentFilter } from '@expo/config-plugins/build/android/Manifest'
 
 const GET_CREDENTIAL_ACTION = 'androidx.credentials.registry.provider.action.GET_CREDENTIAL'
 const GET_CREDENTIALS_ACTION = 'androidx.identitycredentials.action.GET_CREDENTIALS'
+const DEFAULT_INTENT_CATEGORY = 'android.intent.category.DEFAULT'
 
 const hasAction = (intentFilter: ManifestIntentFilter, actionName: string) =>
   intentFilter.action?.find((action) => action.$['android:name'] === actionName) !== undefined
+
+const hasCategory = (intentFilter: ManifestIntentFilter, categoryName: string) =>
+  intentFilter.category?.find((category) => category.$['android:name'] === categoryName) !== undefined
 
 const addAction = (intentFilter: ManifestIntentFilter, actionName: string) =>
   intentFilter.action?.push({
@@ -14,23 +18,16 @@ const addAction = (intentFilter: ManifestIntentFilter, actionName: string) =>
     },
   })
 
+const addCategory = (intentFilter: ManifestIntentFilter, categoryName: string) =>
+  intentFilter.category?.push({
+    $: {
+      'android:name': categoryName,
+    },
+  })
+
 const withDigitalCredentialsApiAndroidManifest: ConfigPlugin = (config) =>
   withAndroidManifest(config, (pluginConfig) => {
-    const androidManifest = pluginConfig.modResults.manifest
-
-    const application = androidManifest.application?.find(
-      (application) => application.$['android:name'] === '.MainApplication'
-    )
-    if (!application) {
-      throw new Error('Unable to update <application /> MainApplication in AndroidManifest.xml as it was not found')
-    }
-
-    const activity = application.activity?.find((activity) => activity.$['android:name'] === '.MainActivity')
-    if (!activity) {
-      throw new Error(
-        'Unable to update <activity /> MainActivity in <application /> MainApplication in AndroidManifest.xml as it was not found'
-      )
-    }
+    const activity = AndroidConfig.Manifest.getMainActivityOrThrow(pluginConfig.modResults)
 
     if (!activity['intent-filter']) activity['intent-filter'] = []
     let intentFilter = activity['intent-filter'].find(
@@ -39,12 +36,13 @@ const withDigitalCredentialsApiAndroidManifest: ConfigPlugin = (config) =>
     )
 
     if (!intentFilter) {
-      intentFilter = {
-        action: [],
-      }
+      intentFilter = {}
 
       activity['intent-filter'].push(intentFilter)
     }
+
+    if (!intentFilter.action) intentFilter.action = []
+    if (!intentFilter.category) intentFilter.category = []
 
     if (!hasAction(intentFilter, GET_CREDENTIALS_ACTION)) {
       addAction(intentFilter, GET_CREDENTIALS_ACTION)
@@ -54,10 +52,18 @@ const withDigitalCredentialsApiAndroidManifest: ConfigPlugin = (config) =>
       addAction(intentFilter, GET_CREDENTIAL_ACTION)
     }
 
+    if (!hasCategory(intentFilter, DEFAULT_INTENT_CATEGORY)) {
+      addCategory(intentFilter, DEFAULT_INTENT_CATEGORY)
+    }
+
+    // TODO: make configurable
+    const newAttributes = {
+      'android:launchMode': 'singleTask',
+    }
+    activity.$ = { ...activity.$, ...newAttributes }
+
     return pluginConfig
   })
-
-const { withAppBuildGradle } = require('expo/config-plugins')
 
 const withCustomAppBuildGradle: ConfigPlugin = (config) => {
   return withProjectBuildGradle(config, async (config) => {
