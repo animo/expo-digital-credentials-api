@@ -56,12 +56,6 @@ const withDigitalCredentialsApiAndroidManifest: ConfigPlugin = (config) =>
       addCategory(intentFilter, DEFAULT_INTENT_CATEGORY)
     }
 
-    // TODO: make configurable
-    const newAttributes = {
-      'android:launchMode': 'singleTask',
-    }
-    activity.$ = { ...activity.$, ...newAttributes }
-
     return pluginConfig
   })
 

@@ -1,9 +1,12 @@
 {
-  "name": "expo-digital-credential-api",
-  "version": "0.1.0",
+  "name": "@animo-id/expo-digital-credentials-api",
+  "version": "0.0.0",
   "description": "Expo wrapper around Android Digital Credentials API",
   "main": "build/index.js",
   "types": "build/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "pnpm build:plugin && pnpm build:module",
     "build:plugin": "tsc -p plugin/tsconfig.json",
@@ -12,7 +15,8 @@
     "style:fix": "biome check --write --unsafe",
     "types:check": "pnpm build:plugin --noEmit && pnpm build:module --noEmit",
     "expo-module": "expo-module",
-    "open:android": "open -a \"Android Studio\" example/android"
+    "open:android": "open -a \"Android Studio\" example/android",
+    "release": "release-it"
   },
   "keywords": [
     "react-native",
@@ -44,7 +48,8 @@
     "expo": "~52.0.0",
     "expo-module-scripts": "^4.0.3",
     "react-native": "0.76.0",
-    "release-it": "^17.4.1"
+    "release-it": "^17.4.1",
+    "typescript": "^5.5.3"
   },
   "peerDependencies": {
     "expo": "*",

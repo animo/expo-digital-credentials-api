@@ -1,5 +1,7 @@
 package id.animo.digitalcredentials
 
+import android.app.Activity
+import android.app.Activity.RESULT_OK
 import android.content.Context
 import android.util.Base64
 import android.util.Log
@@ -12,32 +14,36 @@ class DigitalCredentialsApiModule : Module() {
     private val context: Context
         get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
+    private val currentActivity: Activity
+        get() = appContext.activityProvider?.currentActivity ?: throw Exceptions.MissingActivity()
+
     override fun definition() = ModuleDefinition {
         Name("DigitalCredentialsApi")
 
         Events("onRequest")
 
-        AsyncFunction("registerCredentials") Coroutine
-                { credentialBytesBase64: String ->
-                    Log.d("DigitalCredentialsApi", "registerCredentials")
-                    // Bytes are encoded as base64 for easy passing from TS -> Kotlin
-                    val credentialBytes = Base64.decode(credentialBytesBase64, Base64.DEFAULT)
+        AsyncFunction("registerCredentials") Coroutine { credentialBytesBase64: String ->
+            Log.d("DigitalCredentialsApi", "registerCredentials")
 
-                    DigitalCredentialsApiSingleton.registerCredentials(context, credentialBytes)
-                    return@Coroutine
-                }
+            // Bytes are encoded as base64 for easy passing from TS -> Kotlin
+            val credentialBytes = Base64.decode(credentialBytesBase64, Base64.DEFAULT)
+
+            DigitalCredentialsApiSingleton.registerCredentials(context, credentialBytes)
+            return@Coroutine
+        }
 
         Function("getRequest") {
-            Log.d("DigitalCredentialsApi", "getRequest")
+            Log.d("DigitalCredentialsApi", "getRequest called")
+
             // get the Intent from onCreate activity (app not running in background)
             DigitalCredentialsApiSingleton.isPending = false
 
             val intent = DigitalCredentialsApiSingleton.intent
             if (intent != null) {
-                Log.d("DigitalCredentialsApi", "hasIntent")
-                val request = DigitalCredentialsApiSingleton.getRequest(intent)
-                Log.d("DigitalCredentialsApi", "getRequestValue $request")
+                Log.d("DigitalCredentialsApi", "pending intent found in getRqeuest")
+                val request = DigitalCredentialsApiSingleton.getRequest(context, intent)
                 DigitalCredentialsApiSingleton.intent = null
+
                 return@Function request
             }
 
@@ -46,20 +52,31 @@ class DigitalCredentialsApiModule : Module() {
 
         Function("sendResponse") { response: String ->
             Log.d("DigitalCredentialsApi", "sendResponse")
-            DigitalCredentialsApiSingleton.sendResponse(response)
+
+            val result = DigitalCredentialsApiSingleton.getResponseIntent(response)
+            currentActivity.setResult(RESULT_OK, result)
+            // TODO: check if just finish is enough?
+            currentActivity.finishAndRemoveTask()
         }
 
-        Function("sendErrorResponse") { errorType: String, errorMessage: String ->
+        Function("sendErrorResponse") { errorMessage: String ->
             Log.d("DigitalCredentialsApi", "sendErrorResponse")
-            DigitalCredentialsApiSingleton.sendErrorResponse(errorType, errorMessage)
+
+            val result = DigitalCredentialsApiSingleton.getErrorResponseIntent(errorMessage)
+            currentActivity.setResult(RESULT_OK, result)
+            // TODO: check if just finish is enough?
+            currentActivity.finishAndRemoveTask()
         }
 
         OnNewIntent {
-            Log.d("DigitalCredentialsApi", "OnNewIntent")
+            Log.d("DigitalCredentialsApi", "OnNewIntent called")
             if (DigitalCredentialsApiSingleton.isGetCredentialRequestIntent(it)) {
-                Log.d("DigitalCredentialsApi", "OnNewIntent is credentials")
+                Log.d("DigitalCredentialsApi", "OnNewIntent is a credential request")
                 DigitalCredentialsApiSingleton.intent = it
                 DigitalCredentialsApiSingleton.isPending = true
+                sendEvent("onRequest", mapOf("request" to DigitalCredentialsApiSingleton.getRequest(context, it)))
+            } else {
+                Log.d("DigitalCredentialsApi", "OnNewIntent is NOT a credential request")
             }
         }
     }

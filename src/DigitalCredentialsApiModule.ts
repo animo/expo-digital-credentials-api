@@ -6,7 +6,7 @@ declare class DigitalCredentialsApiModule extends NativeModule<DigitalCredential
   registerCredentials(credentialBytesBase64: string): Promise<void>
   getRequest(): string | null
   sendResponse(response: string): void
-  sendErrorResponse(errorType: string, errorMessage: string): void
+  sendErrorResponse(errorMessage: string): void
 }
 
 // This call loads the native module object from the JSI.

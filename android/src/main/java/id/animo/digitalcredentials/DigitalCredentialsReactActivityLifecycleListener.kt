@@ -9,10 +9,11 @@ import expo.modules.core.interfaces.ReactActivityLifecycleListener
 class DigitalCredentialsReactActivityLifecycleListener : ReactActivityLifecycleListener {
     override fun onCreate(activity: Activity?, savedInstanceState: Bundle?) {
         val intent = activity?.intent
+        Log.d("DigitalCredentialsApi", "onCreate called")
 
         // Somehow the IntentHelper is not working...
-        if (intent != null && intent.action == DigitalCredentialsApiSingleton.ACTION) {
-            Log.d("DigitalCredentialsApi", "received get credentials request intent")
+        if (intent != null && DigitalCredentialsApiSingleton.isGetCredentialRequestIntent(intent)) {
+            Log.d("DigitalCredentialsApi", "onCraete: received get credentials request intent")
             DigitalCredentialsApiSingleton.intent = activity.intent
             DigitalCredentialsApiSingleton.isPending = true
         }

@@ -1,5 +1,5 @@
 {
-  "name": "expo-digital-credential-api-example",
+  "name": "expo-digital-credentials-api-example",
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {

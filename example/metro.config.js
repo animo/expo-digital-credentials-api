@@ -19,7 +19,7 @@ config.resolver.nodeModulesPaths = [
 ]
 
 config.resolver.extraNodeModules = {
-  'expo-digital-credential-api': '..',
+  '@animo-id/expo-digital-credentials-api': '..',
 }
 
 config.watchFolders = [path.resolve(__dirname, '..')]
