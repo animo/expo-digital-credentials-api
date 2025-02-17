@@ -1,13 +1,13 @@
 import { useEvent } from 'expo'
+import { useMemo } from 'react'
 import type {
+  DigitalCredentialsRequest,
   RegisterCredentialsOptions,
   SendErrorResponseOptions,
   SendResponseOptions,
-  DigitalCredentialsRequest,
 } from './DigitalCredentialsApi.types'
 import Module from './DigitalCredentialsApiModule'
 import { getEncodedCredentialsBase64 } from './encodeCredentials'
-import { useMemo } from 'react'
 
 export async function registerCredentials(options: RegisterCredentialsOptions): Promise<void> {
   const credentialBytesBase64 = getEncodedCredentialsBase64(options.credentials)

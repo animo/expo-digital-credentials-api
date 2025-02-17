@@ -1,12 +1,12 @@
 import {
-  registerCredentials,
   getRequest,
-  sendResponse,
+  registerCredentials,
   sendErrorResponse,
+  sendResponse,
   useRequestListener,
 } from '@animo-id/expo-digital-credentials-api'
-import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 import { useState } from 'react'
+import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 
 export default function App() {
   const [staticRequest, setRequest] = useState(getRequest())
