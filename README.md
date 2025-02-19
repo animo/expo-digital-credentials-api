@@ -41,7 +41,7 @@
 
 ---
 
-An [Expo Module](https://docs.expo.dev/modules/overview/) and [Expo Config Plugin](https://docs.expo.dev/guides/config-plugins/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
+An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
 
 - Currently a default matcher implementation for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_ and _unsigned requests_. In the future support for a custom matcher might be added.
 - During development when the activity is launched and the application is already running this results in render errors. In production these errors won't occur, but it does hinder the development experience. We're still looking for a solution.
@@ -53,43 +53,20 @@ An [Expo Module](https://docs.expo.dev/modules/overview/) and [Expo Config Plugi
 
 ## Getting Started
 
-Install the plugin and `expo-build-properties` using the following command. We need `expo-build-properties` to set the `kotlinVersion` for Android to `2.0.21`.
+Install the module using the following command.
 
 ```sh
 # yarn
-yarn add @animo-id/expo-digital-credentials-api expo-build-properties
+yarn add @animo-id/expo-digital-credentials-api
 
 # npm
-npm install @animo-id/expo-digital-credentials-api expo-build-properties
+npm install @animo-id/expo-digital-credentials-api
 
 # npm
-pnpm install @animo-id/expo-digital-credentials-api expo-build-properties
+pnpm install @animo-id/expo-digital-credentials-api
 ```
 
-Then add the plugin to your Expo app config (`app.json`, `app.config.json` or `app.config.js`) `plugins` array:
-
-```json
-{
-  "expo": {
-    "plugins": [
-      "@animo-id/expo-digital-credentials-api",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "kotlinVersion": "2.0.21"
-          }
-        }
-      ]
-    ]
-  }
-}
-```
-
-> [!NOTE]
-> The `expo` top level key is only needed in `app.json`. In `app.config.json`, `app.config.js` and `app.config.ts` the top level expo key is not present anymore.
-
-And lastly, prebuild the application so the Expo Module wrapper can be added as native dependency (If you aren't making any manual modification to the Android directories you can add them to the gitignore of your project and generate them on demand):
+Then prebuild the application so the Expo Module wrapper can be added as native dependency (If you aren't making any manual modification to the Android directories you can add them to the gitignore of your project and generate them on demand):
 
 ```sh
 # yarn
