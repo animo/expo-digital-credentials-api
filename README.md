@@ -51,6 +51,11 @@ An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set u
 > [!NOTE]  
 > This library integrates with experiments Android APIs, as well as draft versions of several specifications. Expect all APIs to break in future releases.
 
+<p align="center">
+  <img style="margin: 5px;" src="./assets/request.png" width="200px">
+  <img style="margin: 5px;" src="./assets/overlay.png" width="200px">
+</p>
+
 ## Getting Started
 
 Install the module using the following command.
