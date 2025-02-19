@@ -6,9 +6,6 @@ export {
 } from './DigitalCredentialsApi.types'
 export {
   registerCredentials,
-  getRequest,
   sendErrorResponse,
   sendResponse,
-  onRequestListener,
-  useRequestListener,
 } from './api'

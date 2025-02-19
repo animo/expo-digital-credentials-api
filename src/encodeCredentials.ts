@@ -1,10 +1,22 @@
 import { decodeBase64, encodeBase64 } from './util'
 
 export interface CredentialDisplayData {
+  // TODO: also align more with OID4VCI input?
   title: string
   subtitle?: string
-  // data url of the image. Should start with
-  iconDataUrl?: `data:image/jpeg;base64,${string}`
+
+  // data url of the image
+  iconDataUrl?: `data:image/${'jpg' | 'png'};base64,${string}`
+
+  /**
+   * Allows for claim display metadata
+   */
+  claims?: Array<{
+    // TODO: path can contain null for array selectors
+    path: string[]
+
+    displayName?: string
+  }>
 }
 
 interface CredentialConfiguration {
@@ -14,22 +26,65 @@ interface CredentialConfiguration {
 export interface CredentialItem {
   id: string
   display: CredentialDisplayData
-  credential: CredentialConfigurationMdoc
+  credential: CredentialConfigurationMdoc | CredentialConfigurationSdJwtDc
 }
 
 export interface CredentialConfigurationMdoc extends CredentialConfiguration {
   format: 'mso_mdoc'
   doctype: string
 
-  // TODO: support nested structures
-  namespaces: Record<string, Record<string, string | number | boolean>>
+  /**
+   * The namespaces of the credential. You can pass null
+   * for nested / complex attribute values, as it's not possible
+   * to do matching for those claims
+   */
+  namespaces: Record<string, Record<string, string | number | boolean | null>>
 
   // TODO: support claim name mapping
+}
+
+export type SdJwtDcClaims = {
+  [key: string]: string | number | boolean | Array<SdJwtDcClaims> | SdJwtDcClaims
+}
+
+export interface CredentialConfigurationSdJwtDc extends CredentialConfiguration {
+  format: 'dc+sd-jwt'
+  vct: string
+
+  /**
+   * The decoded claims of the SD JWT DC, including the resolved disclosures.
+   */
+  claims: SdJwtDcClaims
 }
 
 interface IconEntry {
   iconValue: Uint8Array
   iconOffset: number
+}
+
+function recursivelyMapSdJwtDc(
+  claims: SdJwtDcClaims,
+  display: CredentialDisplayData,
+  path: string[]
+): EncodedSdJwtDcCredentialJsonPath {
+  const result: EncodedSdJwtDcCredentialJsonPath = {}
+
+  for (const [key, value] of Object.entries(claims)) {
+    if (!value || Array.isArray(value) || typeof value !== 'object') {
+      const claimDisplay = display.claims?.find((claim) => claim.path.join('.') === [...path, key].join('.'))
+      const displayName = claimDisplay?.displayName ?? key
+
+      result[key] = {
+        display: displayName,
+        // Do not allow matching based on array claims for now
+        value: Array.isArray(value) ? undefined : value ?? undefined,
+      }
+    } else {
+      result[key] = recursivelyMapSdJwtDc(value, display, [...path, key])
+    }
+  }
+
+  return result
 }
 
 // TODO: we should allow registering a custom matcher and thus custom credential bytes structure
@@ -41,7 +96,9 @@ export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
   const iconRecord: Record<string, IconEntry> = {}
   for (const item of items) {
     const iconBytes = item.display.iconDataUrl
-      ? decodeBase64(item.display.iconDataUrl.replace('data:image/jpeg;base64,', ''))
+      ? decodeBase64(
+          item.display.iconDataUrl.replace('data:image/png;base64,', '').replace('data:image/jpg;base64,', '')
+        )
       : new Uint8Array(0)
     iconRecord[item.id] = { iconValue: iconBytes, iconOffset: 0 }
   }
@@ -64,39 +121,56 @@ export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
   }
 
   // Create credential JSON structure
-  // Mapping of doctype => credentials[]
+  // Mapping of doctype/vct => credentials[]
   const mdocCredentials: EncodedJson['credentials']['mso_mdoc'] = {}
+  const sdJwtCredentials: EncodedJson['credentials']['dc+sd-jwt'] = {}
 
   for (const item of items) {
+    const credentialJson = {
+      id: item.id,
+      title: item.display.title,
+      subtitle: item.display.subtitle,
+      icon: {
+        start: iconRecord[item.id].iconOffset,
+        length: iconRecord[item.id].iconValue.length,
+      },
+    }
+
     if (item.credential.format === 'mso_mdoc') {
-      const namespacesJson = {}
+      const pathsJson: EncodedJson['credentials']['mso_mdoc'][string][number]['paths'] = {}
       for (const [namespace, elements] of Object.entries(item.credential.namespaces)) {
-        namespacesJson[namespace] = {}
+        pathsJson[namespace] = {}
         for (const [element, value] of Object.entries(elements)) {
-          namespacesJson[namespace][element] = {
-            value,
-            // TODO: display mapping
-            display: element,
+          const claimDisplay = item.display.claims?.find(
+            (claim) => claim.path.join('.') === [namespace, element].join('.')
+          )
+          const displayName = claimDisplay?.displayName ?? element
+          pathsJson[namespace][element] = {
+            value: value ?? undefined,
+            display: displayName,
           }
         }
-      }
-
-      const credentialJson = {
-        id: item.id,
-        title: item.display.title,
-        subtitle: item.display.subtitle,
-        icon: {
-          start: iconRecord[item.id].iconOffset,
-          length: iconRecord[item.id].iconValue.length,
-        },
-        namespaces: namespacesJson,
       }
 
       // Add to doctype array
       if (!mdocCredentials[item.credential.doctype]) {
         mdocCredentials[item.credential.doctype] = []
       }
-      mdocCredentials[item.credential.doctype].push(credentialJson)
+      mdocCredentials[item.credential.doctype].push({
+        ...credentialJson,
+        paths: pathsJson,
+      })
+    } else if (item.credential.format === 'dc+sd-jwt') {
+      const pathsJson = recursivelyMapSdJwtDc(item.credential.claims, item.display, [])
+
+      // Add to vct array
+      if (!sdJwtCredentials[item.credential.vct]) {
+        sdJwtCredentials[item.credential.vct] = []
+      }
+      sdJwtCredentials[item.credential.vct].push({
+        ...credentialJson,
+        paths: pathsJson,
+      })
     } else {
       throw new Error('Unsupported format. Only mso_mdoc supported')
     }
@@ -106,6 +180,7 @@ export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
   const registryJson = {
     credentials: {
       mso_mdoc: mdocCredentials,
+      'dc+sd-jwt': sdJwtCredentials,
     },
   } satisfies EncodedJson
 
@@ -125,29 +200,55 @@ export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
   return encodeBase64(result)
 }
 
+type EncodedValue = string | number | boolean | undefined
+
+interface EncodedCredentialJsonCommon {
+  id: string
+  title: string
+  subtitle?: string
+  icon?: {
+    start: number
+    length: number
+  }
+}
+
+type EncodedSdJwtDcCredentialJsonPath = {
+  // top-level key
+  [key: string]:
+    | // end-value (everything except object, so also arrays)
+    { value?: EncodedValue; display: string }
+    // object
+    | EncodedSdJwtDcCredentialJsonPath
+}
+
 interface EncodedJson {
   credentials: {
     mso_mdoc: Record<
+      // doctype
       string,
-      Array<{
-        id: string
-        title: string
-        subtitle?: string
-        // TOOD: optional?
-        icon?: {
-          start: number
-          length: number
-        }
-        namespaces: Record<
-          // namespace
-          string,
-          Record<
-            // element
+      Array<
+        EncodedCredentialJsonCommon & {
+          paths: Record<
+            // namespace
             string,
-            { value: string; display: string }
+            Record<
+              // element
+              string,
+              { value?: EncodedValue; display: string }
+            >
           >
-        >
-      }>
+        }
+      >
+    >
+
+    'dc+sd-jwt': Record<
+      // vct value
+      string,
+      Array<
+        EncodedCredentialJsonCommon & {
+          paths: EncodedSdJwtDcCredentialJsonPath
+        }
+      >
     >
   }
 }
