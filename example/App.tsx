@@ -1,25 +1,14 @@
-import {
-  getRequest,
-  registerCredentials,
-  sendErrorResponse,
-  sendResponse,
-  useRequestListener,
-} from '@animo-id/expo-digital-credentials-api'
-import { useState } from 'react'
+import { registerCredentials } from '@animo-id/expo-digital-credentials-api'
 import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 
 export default function App() {
-  const [staticRequest, setRequest] = useState(getRequest())
-  const eventRequest = useRequestListener()
-  const request = eventRequest ?? staticRequest
-
   const register = () =>
     registerCredentials({
       credentials: [
         {
           id: '1',
           display: {
-            title: 'Drivers License',
+            title: 'Drivers License Test',
           },
           credential: {
             doctype: 'org.iso.18013.5.1.mDL',
@@ -41,18 +30,6 @@ export default function App() {
       <ScrollView style={styles.container}>
         <Group name="Digital Credentials API">
           <Button title="Register Credentials" onPress={register} />
-          <Button
-            title="Send Response"
-            onPress={() => sendResponse({ response: JSON.stringify({ vp_token: 'something' }) })}
-          />
-          <Button
-            title="Send Error Response"
-            onPress={() => sendErrorResponse({ errorMessage: 'not implemented yet' })}
-          />
-          <Button title="Get request" onPress={() => setRequest(getRequest())} />
-        </Group>
-        <Group name="Request">
-          <Text>{JSON.stringify(request, null, 2)}</Text>
         </Group>
       </ScrollView>
     </SafeAreaView>
