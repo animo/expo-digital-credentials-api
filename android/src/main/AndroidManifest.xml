@@ -1,2 +1,17 @@
-<manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="id.animo.digitalcredentials">
+    <application>
+        <activity
+            android:name=".DigitalCredentialsApiActivity"
+            android:theme="@style/Theme.Transparent"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="androidx.identitycredentials.action.GET_CREDENTIALS"/>
+                <action android:name="androidx.credentials.registry.provider.action.GET_CREDENTIAL"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>

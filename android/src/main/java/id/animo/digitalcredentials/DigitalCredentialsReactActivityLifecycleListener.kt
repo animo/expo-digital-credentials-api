@@ -13,22 +13,9 @@ class DigitalCredentialsReactActivityLifecycleListener : ReactActivityLifecycleL
 
         // Somehow the IntentHelper is not working...
         if (intent != null && DigitalCredentialsApiSingleton.isGetCredentialRequestIntent(intent)) {
-            Log.d("DigitalCredentialsApi", "onCraete: received get credentials request intent")
+            Log.d("DigitalCredentialsApi", "onCreate: received get credentials request intent")
             DigitalCredentialsApiSingleton.intent = activity.intent
             DigitalCredentialsApiSingleton.isPending = true
         }
     }
-
-    //    override fun onNewIntent(intent: Intent): Boolean {
-    //        val request = IntentHelper.extractGetCredentialRequest(intent)
-    //        Log.i("DigitalCredentialsApi", "Received request $request")
-    //
-    //        if (request != null) {
-    //            val parsedRequest = DigitalCredentialHandler().getRequest(intent)
-    //            Log.i("DigitalCredentialsApi", "Received request $parsedRequest")
-    //            return true
-    //        }
-    //
-    //        return false
-    //    }
 }

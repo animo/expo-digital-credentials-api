@@ -138,57 +138,76 @@ await registerCredentials({
 
 ### Handling Credential Request
 
-When the user has selected a credential from your application, the application will be launched with an intent to retrieve the credentials. The application will be launched as a separate instance.
+When the user has selected a credential from your application, the application will be launched with an intent to retrieve the credentials. A custom component will be used and rendered as an overlay.
 
-> [!NOTE]  
-> Currently the main activity will be launched as a full screen application. In the future we might allow registering a custom component and activity to handle incoming requests. This will enable to render a modal over the requesting application (e.g. the browser window) to quickly allow the user to approve a request.
+<img src="./assets/overlay.png" width="200px">
 
-To handle a credential request the following steps are involved:
+#### Registering the component
 
-- `getRequest` and `onRequestListener`/`useRequestListener` - This enables you to get the request that requests a credential from your application.
-- `sendResponse` and `sendErrorResponse` - This enables you to send a response to the incoming request. You should only call this if you received a request as it will finish and close the activity.
+You should register the component as easrly as possible, usually in your `index.ts` file. If you're using Expo Router, [follow these steps](https://docs.expo.dev/router/installation/#custom-entry-point-to-initialize-and-load) to setup a custom entry point.
 
-#### Retrieving the request
+The component will be rendered in a full screen window, but with a transparent background. This allows you to render an overlay rather than a full screen application. By default all screen content that you do not render something over, has an `onPress` handler and will abort the request. You can disable this by passing
 
-Depending on whether the application is already active there's two ways to get the incoming request. Generally you should handle both methods:
+```tsx
+import { registerRootComponent } from "expo";
 
-- Call `getRequest` on application launch to handle a credential request that launched your application.
-- Add a request listener with `onRequestListener`/`useRequestListener` to handle any credential requests after the application was launched.
+import App from "./App";
+import { MyCustomComponent } from "./MyCustomComponent";
+
+// import the component registration method
+// make sure to import this from the /register path
+// so it doesn't load the native module yet
+import registerGetCredentialComponent from "@animo-id/expo-digital-credentials-api/register";
+
+// Registers the componetn to be used for sharing credentials
+registerGetCredentialComponent(MyCustomComponent, {
+  // Whether to cancel the request if the background is pressed. (where no content from your view is rendered).
+  // Defaults to true
+  cancelOnPressBackground: true,
+
+  // Where to put the content if it doesn't fill the whole screen.
+  // Options are 'bottom' (default), 'top', 'center'
+  alignContent: "bottom",
+});
+
+// Default expo method call
+registerRootComponent(App);
+```
+
+#### Handling the request
+
+The request is passed to the registered component as `request` and has type `DigitalCredentialsRequest`.
 
 ```tsx
 import {
-  getRequest,
-  useRequestListener,
+  type DigitalCredentialsRequest,
+  sendErrorResponse,
+  sendResponse,
 } from "@animo-id/expo-digital-credentials-api";
-import { useState, useEffect } from "react";
+import { Button } from "react-native";
+import { Text, View } from "react-native";
 
-export default function App() {
-  const [staticRequest, setRequest] = useState(getRequest());
-  const eventRequest = useRequestListener();
-  const request = eventRequest ?? staticRequest;
-
-  const acceptResponse = () => {
-    // this logic is dependant on your app
-    const response = prepareResponse(request);
-
-    sendResponse({
-      response: JSON.strigify(response),
-    });
-  };
-
-  const declineResponse = () => {
-    sendErrorResponse({ errorMessage: "The user declined the request" });
-  };
-
-  // if there is a request you can render any content you want
-  // that lets the user approve the incoming request
-  if (request) {
-    // You can render buttons to accept / decline the request here, as well
-    // as information about the request
-    return null;
-  }
-
-  return null;
+export function MyCustomComponent({
+  request,
+}: {
+  request: DigitalCredentialsRequest;
+}) {
+  return (
+    <View style={{ width: "100%" }}>
+      <Button
+        title="Send Response"
+        onPress={() =>
+          sendResponse({ response: JSON.stringify({ vp_token: "something" }) })
+        }
+      />
+      <Button
+        title="Send Error Response"
+        onPress={() =>
+          sendErrorResponse({ errorMessage: "Send error response" })
+        }
+      />
+    </View>
+  );
 }
 ```
 
