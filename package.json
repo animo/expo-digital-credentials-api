@@ -13,7 +13,7 @@
     "build:module": "tsc -p tsconfig.json && cp build/register.d.ts register.d.ts",
     "style:check": "biome check --unsafe",
     "style:fix": "biome check --write --unsafe",
-    "types:check": "pnpm build:plugin --noEmit && pnpm build:module --noEmit",
+    "types:check": "pnpm build:plugin --noEmit && tsc -p tsconfig.json",
     "expo-module": "expo-module",
     "open:android": "open -a \"Android Studio\" example/android",
     "release": "release-it"
