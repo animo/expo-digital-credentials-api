@@ -83,6 +83,20 @@ npx expo prebuild
 
 That's it, you now have the Digital Credentials API configured for your Android project.
 
+> [!WARNING]  
+> You might need to set the Kotlin version of your project to 2.0.21. To do this, add the [`expo-build-properties`](https://docs.expo.dev/versions/latest/sdk/build-properties/) dependency to your project, and configure it with `android.kotlinVersion` set to `'2.0.21'`.
+>
+> ```json
+> [
+>   "expo-build-properties",
+>   {
+>     "android": {
+>       "kotlinVersion": "2.0.21"
+>     }
+>   }
+> ]
+> ```
+
 ## Usage
 
 You can now import `@animo-id/expo-digital-credentials-api` in your application.
