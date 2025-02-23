@@ -8,12 +8,10 @@
     "access": "public"
   },
   "scripts": {
-    "build": "pnpm build:plugin && pnpm build:module",
-    "build:plugin": "tsc -p plugin/tsconfig.json",
-    "build:module": "tsc -p tsconfig.json && cp build/register.d.ts register.d.ts",
+    "build": "tsc -p tsconfig.json && cp build/register.d.ts register.d.ts",
     "style:check": "biome check --unsafe",
     "style:fix": "biome check --write --unsafe",
-    "types:check": "pnpm build:plugin --noEmit && tsc -p tsconfig.json",
+    "types:check": "tsc -p tsconfig.json",
     "expo-module": "expo-module",
     "open:android": "open -a \"Android Studio\" example/android",
     "release": "release-it"
@@ -39,9 +37,6 @@
   "author": "Animo <contact@animo.id> (animo)",
   "license": "Apache-2.0",
   "homepage": "https://github.com/animo/expo-digital-credentials-api#readme",
-  "dependencies": {
-    "@expo/config-plugins": "^9.0.15"
-  },
   "devDependencies": {
     "@biomejs/biome": "1.8.1",
     "@types/react": "~18.3.12",

@@ -41,54 +41,37 @@
 
 ---
 
-An [Expo Module](https://docs.expo.dev/modules/overview/) and [Expo Config Plugin](https://docs.expo.dev/guides/config-plugins/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
+An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
 
-- Currently a default matcher implementation for matching credentials based on a request is bundled, which only supports _mdoc_, _openid4vp_ , _dcql_ and _unsigned requests_. In the future support for custom matcher might be added.
+- Currently a default matcher implementation for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_ and _unsigned requests_. In the future support for a custom matcher might be added.
 - During development when the activity is launched and the application is already running this results in render errors. In production these errors won't occur, but it does hinder the development experience. We're still looking for a solution.
 - This library is tested with Expo 52 and React Native 0.76. It uses some hacks to use Kotlin 2.0.21, and is likely to break in non-default application setups. React Native 77 will use Kotlin 2 by default, and these hacks shouldn't be needed anymore.
+- Icons provided for credentials are currently not rendered.
 
 > [!NOTE]  
 > This library integrates with experiments Android APIs, as well as draft versions of several specifications. Expect all APIs to break in future releases.
 
+<p align="center">
+  <img style="margin: 5px;" src="./assets/request.png" width="200px">
+  <img style="margin: 5px;" src="./assets/overlay.png" width="200px">
+</p>
+
 ## Getting Started
 
-Install the plugin and `expo-build-properties` using the following command. We need `expo-build-properties` to set the `kotlinVersion` for Android to `2.0.21`.
+Install the module using the following command.
 
 ```sh
 # yarn
-yarn add @animo-id/expo-digital-credentials-api expo-build-properties
+yarn add @animo-id/expo-digital-credentials-api
 
 # npm
-npm install @animo-id/expo-digital-credentials-api expo-build-properties
+npm install @animo-id/expo-digital-credentials-api
 
 # npm
-pnpm install @animo-id/expo-digital-credentials-api expo-build-properties
+pnpm install @animo-id/expo-digital-credentials-api
 ```
 
-Then add the plugin to your Expo app config (`app.json`, `app.config.json` or `app.config.js`) `plugins` array:
-
-```json
-{
-  "expo": {
-    "plugins": [
-      "@animo-id/expo-digital-credentials-api",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "kotlinVersion": "2.0.21"
-          }
-        }
-      ]
-    ]
-  }
-}
-```
-
-> [!NOTE]
-> The `expo` top level key is only needed in `app.json`. In `app.config.json`, `app.config.js` and `app.config.ts` the top level expo key is not present anymore.
-
-And lastly, prebuild the application so the Expo Module wrapper can be added as native dependency (If you aren't making any manual modification to the Android directories you can add them to the gitignore of your project and generate them on demand):
+Then prebuild the application so the Expo Module wrapper can be added as native dependency (If you aren't making any manual modification to the Android directories you can add them to the gitignore of your project and generate them on demand):
 
 ```sh
 # yarn
@@ -121,6 +104,15 @@ await registerCredentials({
       id: "1",
       display: {
         title: "Drivers License",
+        subtitle: "Issued by Utopia",
+        claims: [
+          {
+            path: ["org.iso.18013.5.1", "family_name"],
+            displayName: "Family Name",
+          },
+        ],
+        iconDataUrl:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR4nOzPUQkAIQDA0OMwpxksY19D+PEQ9hJsY6/5vezXAbca0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0E4AAAD//7vSAeZjAN7dAAAAAElFTkSuQmCC",
       },
       credential: {
         doctype: "org.iso.18013.5.1.mDL",
@@ -128,6 +120,35 @@ await registerCredentials({
         namespaces: {
           "org.iso.18013.5.1": {
             family_name: "Glastra",
+          },
+        },
+      },
+    },
+    {
+      id: "2",
+      display: {
+        title: "PID",
+        subtitle: "Issued by Utopia",
+        claims: [
+          {
+            path: ["first_name"],
+            displayName: "First Name",
+          },
+          {
+            path: ["address", "city"],
+            displayName: "Resident City",
+          },
+        ],
+        iconDataUrl:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR4nOzPUQkAIQDA0OMwpxksY19D+PEQ9hJsY6/5vezXAbca0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0E4AAAD//7vSAeZjAN7dAAAAAElFTkSuQmCC",
+      },
+      credential: {
+        vct: "eu.europa.ec.eudi.pid.1",
+        format: "dc+sd-jwt",
+        claims: {
+          first_name: "Timo",
+          address: {
+            city: "Somewhere",
           },
         },
       },
