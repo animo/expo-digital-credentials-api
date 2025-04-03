@@ -43,13 +43,13 @@
 
 An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
 
-- Currently a default matcher implementation for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_ and _unsigned requests_. In the future support for a custom matcher might be added.
+- Currently a default matcher implementation for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_, _signed requests_ and _unsigned requests_. In the future support for a custom matcher might be added. (the matcher is based on [this commit](https://github.com/digitalcredentialsdev/CMWallet/blob/5641746810c1f61826f2bf299cf232092519ceb9/app/src/main/assets/openid4vp.wasm)).
 - During development when the activity is launched and the application is already running this results in render errors. In production these errors won't occur, but it does hinder the development experience. We're still looking for a solution.
 - This library is tested with Expo 52 and React Native 0.76. It uses some hacks to use Kotlin 2.0.21, and is likely to break in non-default application setups. React Native 77 will use Kotlin 2 by default, and these hacks shouldn't be needed anymore.
 - Icons provided for credentials are currently not rendered.
 
 > [!NOTE]  
-> This library integrates with experiments Android APIs, as well as draft versions of several specifications. Expect all APIs to break in future releases.
+> This library integrates with experimental Android APIs, as well as draft versions of several specifications. Expect all APIs to break in future releases.
 
 <p align="center">
   <img style="margin: 5px;" src="./assets/request.png" width="200px">
