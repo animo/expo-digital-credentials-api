@@ -27,7 +27,7 @@
     href="https://raw.githubusercontent.com/animo/expo-digital-credentials-api/main/LICENSE"
     ><img
       alt="License"
-      src="https://img.shields.io/badge/License-EUPL%201.2-blue.svg"
+      src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"
   /></a>
 </p>
 
