@@ -1,6 +1,5 @@
 import { NativeModule, requireNativeModule } from 'expo'
 
-import { Platform } from 'react-native'
 import type { DigitalCredentialsApiModuleEvents } from './DigitalCredentialsApi.types'
 
 declare class DigitalCredentialsApiModule extends NativeModule<DigitalCredentialsApiModuleEvents> {
@@ -11,6 +10,4 @@ declare class DigitalCredentialsApiModule extends NativeModule<DigitalCredential
 }
 
 // This call loads the native module object from the JSI.
-export default Platform.OS === 'android'
-  ? requireNativeModule<DigitalCredentialsApiModule>('DigitalCredentialsApi')
-  : undefined
+export default requireNativeModule<DigitalCredentialsApiModule>('DigitalCredentialsApi')

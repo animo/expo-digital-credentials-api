@@ -2,7 +2,6 @@ import type { PropsWithChildren } from 'react'
 import { AppRegistry, Pressable, useWindowDimensions } from 'react-native'
 import type { DigitalCredentialsRequest } from './DigitalCredentialsApi.types'
 import { sendErrorResponse } from './api'
-import { ensureAndroid } from './util'
 
 type AlignContent = 'top' | 'bottom' | 'center'
 function WrappingComponent({
@@ -46,8 +45,6 @@ export default function register(
     cancelOnPressBackground?: boolean
   }
 ) {
-  ensureAndroid()
-
   AppRegistry.registerComponent('DigitalCredentialsApiActivity', () => ({ request }: { request: string }) => (
     <WrappingComponent alignContent={options?.alignContent}>
       <Component request={JSON.parse(request)} />
