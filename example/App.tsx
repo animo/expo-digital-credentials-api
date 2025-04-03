@@ -25,6 +25,7 @@ export default function App() {
             namespaces: {
               'org.iso.18013.5.1': {
                 family_name: 'Glastra',
+                given_name: 'Timo',
               },
             },
           },
