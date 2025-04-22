@@ -201,15 +201,7 @@ import { MyCustomComponent } from "./MyCustomComponent";
 import registerGetCredentialComponent from "@animo-id/expo-digital-credentials-api/register";
 
 // Registers the componetn to be used for sharing credentials
-registerGetCredentialComponent(MyCustomComponent, {
-  // Whether to cancel the request if the background is pressed. (where no content from your view is rendered).
-  // Defaults to true
-  cancelOnPressBackground: true,
-
-  // Where to put the content if it doesn't fill the whole screen.
-  // Options are 'bottom' (default), 'top', 'center'
-  alignContent: "bottom",
-});
+registerGetCredentialComponent(MyCustomComponent);
 
 // Default expo method call
 registerRootComponent(App);

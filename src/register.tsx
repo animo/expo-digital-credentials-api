@@ -1,55 +1,35 @@
 import type { PropsWithChildren } from 'react'
-import { AppRegistry, Pressable, useWindowDimensions } from 'react-native'
+import { AppRegistry, View } from 'react-native'
 import type { DigitalCredentialsRequest } from './DigitalCredentialsApi.types'
-import { sendErrorResponse } from './api'
 import { ensureAndroid } from './util'
 
-type AlignContent = 'top' | 'bottom' | 'center'
-function WrappingComponent({
-  children,
-  alignContent = 'bottom',
-  cancelOnPressBackground = true,
-}: PropsWithChildren<{ alignContent?: AlignContent; cancelOnPressBackground?: boolean }>) {
-  const { height, width } = useWindowDimensions()
-
+function WrappingComponent({ children }: PropsWithChildren) {
   return (
-    <Pressable
+    <View
       style={{
-        width,
-        height,
-        display: 'flex',
-        justifyContent: alignContent === 'bottom' ? 'flex-end' : alignContent === 'top' ? 'flex-start' : alignContent,
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        backgroundColor: 'transparent',
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
       }}
-      onPress={cancelOnPressBackground ? () => sendErrorResponse({ errorMessage: 'User cancelled' }) : undefined}
     >
       {children}
-    </Pressable>
+    </View>
   )
 }
 
 /**
  * The component that will be rendered for an incoming request
  */
-export default function register(
-  Component: React.FC<{ request: DigitalCredentialsRequest }>,
-  options?: {
-    /**
-     * Content alingment if content does not take up full screen.
-     * @default 'bottom'
-     */
-    alignContent?: AlignContent
-
-    /**
-     * Whether to cancel the submission when the background is pressed.
-     * @default true
-     */
-    cancelOnPressBackground?: boolean
-  }
-) {
+export default function register(Component: React.FC<{ request: DigitalCredentialsRequest }>) {
   ensureAndroid()
 
   AppRegistry.registerComponent('DigitalCredentialsApiActivity', () => ({ request }: { request: string }) => (
-    <WrappingComponent alignContent={options?.alignContent}>
+    <WrappingComponent>
       <Component request={JSON.parse(request)} />
     </WrappingComponent>
   ))

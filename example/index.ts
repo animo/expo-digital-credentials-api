@@ -5,11 +5,7 @@ import App from './App'
 import { Modal } from './Modal'
 
 // Registers the componetn to be used for sharing credentials
-registerGetCredentialComponent(Modal, {
-  cancelOnPressBackground: true,
-
-  alignContent: 'bottom',
-})
+registerGetCredentialComponent(Modal)
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
 // It also ensures that whether you load the app in Expo Go or in a native build,

@@ -4,11 +4,11 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import androidx.annotation.RequiresApi
+import android.view.View
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
+import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class DigitalCredentialsApiActivity : ReactActivity() {
 
@@ -21,6 +21,12 @@ class DigitalCredentialsApiActivity : ReactActivity() {
         window.apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 setDecorFitsSystemWindows(false)
+            } else {
+                @Suppress("DEPRECATION")
+                decorView.systemUiVisibility =
+                        (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
             }
             navigationBarColor = android.graphics.Color.TRANSPARENT
             statusBarColor = android.graphics.Color.TRANSPARENT
@@ -36,7 +42,6 @@ class DigitalCredentialsApiActivity : ReactActivity() {
         // Force a re-render of the React component
         recreate()
     }
-
 
     override fun createReactActivityDelegate(): ReactActivityDelegate {
         return object :
