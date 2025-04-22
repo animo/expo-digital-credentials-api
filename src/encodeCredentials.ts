@@ -126,14 +126,18 @@ export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
   const sdJwtCredentials: EncodedJson['credentials']['dc+sd-jwt'] = {}
 
   for (const item of items) {
+    const icon = iconRecord[item.id]
     const credentialJson = {
       id: item.id,
       title: item.display.title,
       subtitle: item.display.subtitle,
-      icon: {
-        start: iconRecord[item.id].iconOffset,
-        length: iconRecord[item.id].iconValue.length,
-      },
+      icon:
+        icon.iconValue.length > 0
+          ? {
+              start: iconRecord[item.id].iconOffset,
+              length: iconRecord[item.id].iconValue.length,
+            }
+          : null,
     }
 
     if (item.credential.format === 'mso_mdoc') {

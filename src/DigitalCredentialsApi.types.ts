@@ -1,3 +1,4 @@
+import type { DigitalCredentialsApiMatcher } from './DigitalCredentialsApiModule'
 import type { CredentialItem } from './encodeCredentials'
 
 export interface DigitalCredentialsRequest {
@@ -43,7 +44,15 @@ export interface DigitalCredentialsRequest {
 
 export interface RegisterCredentialsOptions {
   credentials: CredentialItem[]
+
+  /**
+   * The matcher to use. Avaialbe options are:
+   * - `cmwallet` (default)
+   * - `ubique`
+   */
+  matcher?: DigitalCredentialsApiMatcher
 }
+export type { DigitalCredentialsApiMatcher }
 
 export interface SendResponseOptions {
   response: string

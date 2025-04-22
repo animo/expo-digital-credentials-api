@@ -43,7 +43,7 @@
 
 An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
 
-- Currently a default matcher implementation for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_, _signed requests_ and _unsigned requests_. In the future support for a custom matcher might be added. (the matcher is based on [this commit](https://github.com/digitalcredentialsdev/CMWallet/blob/5641746810c1f61826f2bf299cf232092519ceb9/app/src/main/assets/openid4vp.wasm)).
+- Currently two default matcher implementations for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_, _signed requests_ and _unsigned requests_. In the future support for a custom matcher might be added.
 - During development when the activity is launched and the application is already running this results in render errors. In production these errors won't occur, but it does hinder the development experience. We're still looking for a solution.
 - This library is tested with Expo 52 and React Native 0.76. It uses some hacks to use Kotlin 2.0.21, and is likely to break in non-default application setups. React Native 77 will use Kotlin 2 by default, and these hacks shouldn't be needed anymore.
 - Icons provided for credentials are currently not rendered.
@@ -105,6 +105,11 @@ You can now import `@animo-id/expo-digital-credentials-api` in your application.
 
 To make Android aware of the credentials availble in your wallet, you need to register the credentials. Every time the credentials in your application changes, you should call this method again.
 
+When registering credentials you can also choose the matcher that is used. When registering credentials with a new matcher the old matcher will not be used anymore (the latest register call always overrides previous calls). The supported matchers are:
+
+- CMWallet matcher taken from https://github.com/digitalcredentialsdev/CMWallet. ([current version](https://github.com/digitalcredentialsdev/CMWallet/blob/f4aa9ebbeaf55fa3973b467701887464be3d4b51/app/src/main/assets/openid4vp.wasm))
+- Ubique matcher taken from https://github.com/UbiqueInnovkation/oid4vp-wasm-matcher. ([current version](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.4)).
+
 ```tsx
 import {
   registerCredentials,
@@ -113,6 +118,7 @@ import {
 
 // See RegisterCredentialsOptions for all options
 await registerCredentials({
+  matcher: "cmwallet",
   credentials: [
     {
       id: "1",

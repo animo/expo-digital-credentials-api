@@ -19,13 +19,15 @@ class DigitalCredentialsApiModule : Module() {
         Name("DigitalCredentialsApi")
 
         AsyncFunction("registerCredentials") Coroutine
-                { credentialBytesBase64: String ->
+                { credentialBytesBase64: String, _matcher: String? ->
                     Log.d("DigitalCredentialsApi", "registerCredentials")
 
                     // Bytes are encoded as base64 for easy passing from TS -> Kotlin
                     val credentialBytes = Base64.decode(credentialBytesBase64, Base64.DEFAULT)
 
-                    DigitalCredentialsApiSingleton.registerCredentials(context, credentialBytes)
+                    val matcher = _matcher?.let { Matcher.fromStringIdentifier(it) } ?: Matcher.CMWALLET
+
+                    DigitalCredentialsApiSingleton.registerCredentials(context, credentialBytes, matcher)
                     return@Coroutine
                 }
 

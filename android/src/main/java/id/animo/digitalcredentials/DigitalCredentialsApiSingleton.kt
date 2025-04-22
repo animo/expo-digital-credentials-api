@@ -15,6 +15,39 @@ import androidx.credentials.registry.provider.selectedEntryId
 import expo.modules.core.interfaces.SingletonModule
 import org.json.JSONObject
 
+enum class Matcher(val value: String) {
+
+    /**
+     * The matcher is taken from https://github.com/digitalcredentialsdev/CMWallet
+     *
+     * This is the matcher before support for icons was added, which has broken the selection
+     *
+     * Current version:
+     * https://github.com/digitalcredentialsdev/CMWallet/blob/f4aa9ebbeaf55fa3973b467701887464be3d4b51/app/src/main/assets/openid4vp.wasm
+     */
+    CMWALLET("cmwallet-matcher.wasm"),
+
+    /**
+     * The matcher is taken from https://github.com/UbiqueInnovation/oid4vp-wasm-matcher
+     *
+     * Current version: https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.4
+     */
+    UBIQUE("ubique-matcher.wasm");
+
+    override fun toString(): String {
+        return value
+    }
+
+    companion object {
+        fun fromStringIdentifier(value: String): Matcher =
+                when (value.lowercase()) {
+                    "cmwallet" -> CMWALLET
+                    "ubique" -> UBIQUE
+                    else -> throw IllegalArgumentException("Unknown matcher value: $value")
+                }
+    }
+}
+
 @OptIn(ExperimentalDigitalCredentialApi::class)
 object DigitalCredentialsApiSingleton : SingletonModule {
     override fun getName(): String {
@@ -25,11 +58,15 @@ object DigitalCredentialsApiSingleton : SingletonModule {
     var intent: Intent? = null
     var isPending: Boolean = false
 
-    suspend fun registerCredentials(context: Context, credentialBytes: ByteArray) {
+    suspend fun registerCredentials(
+            context: Context,
+            credentialBytes: ByteArray,
+            matcher: Matcher
+    ) {
         Log.i("DigitalCredentialsApi", "registering credentials")
 
         val registryManager = RegistryManager.create(context)
-        val matcher = loadMatcher(context)
+        val matcherInstance = loadMatcher(context, matcher)
 
         // For backward compatibility with Chrome
         registryManager.registerCredentials(
@@ -39,7 +76,7 @@ object DigitalCredentialsApiSingleton : SingletonModule {
                                         "com.credman.IdentityCredential",
                                         "openid4vp",
                                         credentialBytes,
-                                        matcher
+                                        matcherInstance
                                 ) {}
         )
 
@@ -51,7 +88,7 @@ object DigitalCredentialsApiSingleton : SingletonModule {
                                         DigitalCredential.TYPE_DIGITAL_CREDENTIAL,
                                         "openid4vp",
                                         credentialBytes,
-                                        matcher
+                                        matcherInstance
                                 ) {}
         )
     }
@@ -123,14 +160,9 @@ object DigitalCredentialsApiSingleton : SingletonModule {
         return requestReturn.toString()
     }
 
-    /**
-     * The matcher is taken from https://github.com/leecam/CMWallet We might allow for a custom
-     * matcher to be registered in the future
-     *
-     * Current version:
-     * https://github.com/leecam/CMWallet/blob/a9fbdb692b8b2c8a941fba57706e47bbb5a51cf4/app/src/main/assets/openid4vp.wasm
-     */
-    private fun loadMatcher(context: Context) = loadAsset(context, "openid4vp.wasm")
+    /** Load matcher */
+    private fun loadMatcher(context: Context, matcher: Matcher) =
+            loadAsset(context, matcher.toString())
 
     /**
      * The allowed apps is required to pass to the getOrigin and is taken from

@@ -3,6 +3,7 @@ export {
   RegisterCredentialsOptions,
   SendErrorResponseOptions,
   SendResponseOptions,
+  DigitalCredentialsApiMatcher,
 } from './DigitalCredentialsApi.types'
 export {
   registerCredentials,

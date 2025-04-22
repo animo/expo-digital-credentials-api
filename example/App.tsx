@@ -1,9 +1,10 @@
-import { registerCredentials } from '@animo-id/expo-digital-credentials-api'
+import { type DigitalCredentialsApiMatcher, registerCredentials } from '@animo-id/expo-digital-credentials-api'
 import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 
 export default function App() {
-  const register = () =>
+  const register = (matcher: DigitalCredentialsApiMatcher) =>
     registerCredentials({
+      matcher,
       credentials: [
         {
           id: '1',
@@ -61,14 +62,16 @@ export default function App() {
         },
       ],
     })
-      .then(() => console.log('success'))
+      .then(() => console.log('success', matcher))
       .catch((error) => console.error('error', error))
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.container}>
-        <Group name="Digital Credentials API">
-          <Button title="Register Credentials" onPress={register} />
+        <Group name="Register Credentials">
+          <Button title="Ubique Matcher" onPress={() => register('ubique')} />
+          <View style={{ height: 20 }} />
+          <Button title="CMWallet Matcher" onPress={() => register('cmwallet')} />
         </Group>
       </ScrollView>
     </SafeAreaView>

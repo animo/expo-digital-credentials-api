@@ -11,7 +11,7 @@ export async function registerCredentials(options: RegisterCredentialsOptions): 
   ensureAndroid()
   const credentialBytesBase64 = getEncodedCredentialsBase64(options.credentials)
 
-  await Module?.registerCredentials(credentialBytesBase64)
+  await Module?.registerCredentials(credentialBytesBase64, options.matcher ?? 'cmwallet')
 }
 
 export function sendResponse(options: SendResponseOptions) {
