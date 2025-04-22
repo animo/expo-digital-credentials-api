@@ -30,7 +30,7 @@ enum class Matcher(val value: String) {
     /**
      * The matcher is taken from https://github.com/UbiqueInnovation/oid4vp-wasm-matcher
      *
-     * Current version: https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.4
+     * Current version: https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.5
      */
     UBIQUE("ubique-matcher.wasm");
 

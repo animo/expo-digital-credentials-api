@@ -108,7 +108,7 @@ To make Android aware of the credentials availble in your wallet, you need to re
 When registering credentials you can also choose the matcher that is used. When registering credentials with a new matcher the old matcher will not be used anymore (the latest register call always overrides previous calls). The supported matchers are:
 
 - CMWallet matcher taken from https://github.com/digitalcredentialsdev/CMWallet. ([current version](https://github.com/digitalcredentialsdev/CMWallet/blob/f4aa9ebbeaf55fa3973b467701887464be3d4b51/app/src/main/assets/openid4vp.wasm))
-- Ubique matcher taken from https://github.com/UbiqueInnovkation/oid4vp-wasm-matcher. ([current version](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.4)).
+- Ubique matcher taken from https://github.com/UbiqueInnovkation/oid4vp-wasm-matcher. ([current version](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.5)).
 
 ```tsx
 import {
