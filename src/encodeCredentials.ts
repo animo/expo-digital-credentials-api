@@ -213,7 +213,7 @@ interface EncodedCredentialJsonCommon {
   icon?: {
     start: number
     length: number
-  }
+  } | null
 }
 
 type EncodedSdJwtDcCredentialJsonPath = {
