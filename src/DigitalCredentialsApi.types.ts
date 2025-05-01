@@ -12,22 +12,43 @@ export interface DigitalCredentialsRequest {
    */
   packageName: string
 
-  request: {
-    /**
-     * List of providers that can handle the request
-     */
-    providers: Array<{
-      /**
-       * Only OpenID4VP supported at the moment
-       */
-      protocol: 'openid4vp'
+  request:
+    | {
+        requests?: never
 
-      /**
-       * The OpenID4VP specific request as a JSON String
-       */
-      request: string
-    }>
-  }
+        /**
+         * List of providers that can handle the request
+         *
+         * @deprecated in v1.0 only `requests` should/will be used, but for interoperability
+         * you should also handle the providers.
+         */
+        providers: Array<{
+          /**
+           * Only OpenID4VP supported at the moment
+           */
+          protocol: 'openid4vp'
+
+          /**
+           * The OpenID4VP specific request as a JSON String
+           */
+          request: string
+        }>
+      }
+    | {
+        providers?: never
+
+        requests: Array<{
+          /**
+           * Only OpenID4VP supported at the moment
+           */
+          protocol: 'openid4vp'
+
+          /**
+           * The OpenID4VP specific request data as a JSON string
+           */
+          data: string
+        }>
+      }
 
   selectedEntry: {
     /**
