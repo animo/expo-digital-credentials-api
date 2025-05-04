@@ -10,6 +10,7 @@ declare class DigitalCredentialsApiModule extends NativeModule<DigitalCredential
   getRequest(): string | null
   sendResponse(response: string): void
   sendErrorResponse(errorMessage: string): void
+  isGetCredentialActivity(): boolean
 }
 
 // This call loads the native module object from the JSI.

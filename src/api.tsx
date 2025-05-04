@@ -25,3 +25,9 @@ export function sendErrorResponse(options: SendErrorResponseOptions) {
 
   Module?.sendErrorResponse(options.errorMessage)
 }
+
+export function isGetCredentialActivity(): boolean {
+  ensureAndroid()
+
+  return Module?.isGetCredentialActivity() as boolean
+}

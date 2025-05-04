@@ -205,7 +205,7 @@ import { MyCustomComponent } from "./MyCustomComponent";
 
 // import the component registration method
 // make sure to import this from the /register path
-// so it doesn't load the native module yet
+// so it doesn't load the native module yet, as that will prevent the app from correctly loading
 import registerGetCredentialComponent from "@animo-id/expo-digital-credentials-api/register";
 
 // Registers the componetn to be used for sharing credentials
@@ -249,6 +249,23 @@ export function MyCustomComponent({
       />
     </View>
   );
+}
+```
+
+#### Note on Expo Router
+
+If you're using Expo Router, the root application is automatically loaded and executed, even if a custom activity is launched in React Native, and thus your main application logic will be executed (although not visible).
+
+To prevent this from happening, you can create a small wrapper that returns `null` when the current activity is the get credential activitiy using the `isGetCredentialActivity` method. Make sure to only call this method once your app component is loaded, to prevent the app loading to get stuck.
+
+```ts
+import { isGetCredentialActivity } from "@animo-id/expo-digital-credentials-api";
+
+export default function App() {
+  const isDcApi = useMemo(() => isGetCredentialActivity(), []);
+  if (isDcApi) return null;
+
+  return <MainApp />;
 }
 ```
 

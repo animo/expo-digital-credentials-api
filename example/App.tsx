@@ -1,7 +1,18 @@
-import { type DigitalCredentialsApiMatcher, registerCredentials } from '@animo-id/expo-digital-credentials-api'
+import {
+  type DigitalCredentialsApiMatcher,
+  isGetCredentialActivity,
+  registerCredentials,
+} from '@animo-id/expo-digital-credentials-api'
+import { useMemo } from 'react'
 import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native'
 
 export default function App() {
+  const isDcApi = useMemo(() => isGetCredentialActivity(), [])
+  if (isDcApi) {
+    console.log('Not rendering main application due to DC API')
+    return null
+  }
+
   const register = (matcher: DigitalCredentialsApiMatcher) =>
     registerCredentials({
       matcher,

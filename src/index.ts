@@ -9,4 +9,5 @@ export {
   registerCredentials,
   sendErrorResponse,
   sendResponse,
+  isGetCredentialActivity,
 } from './api'

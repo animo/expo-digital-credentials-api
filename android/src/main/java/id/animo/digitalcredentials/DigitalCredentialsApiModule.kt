@@ -53,5 +53,10 @@ class DigitalCredentialsApiModule : Module() {
             currentActivity.setResult(RESULT_OK, result)
             currentActivity.finishAndRemoveTask()
         }
+
+        Function("isGetCredentialActivity") {
+            val currentActivity = appContext.activityProvider?.currentActivity
+            return@Function currentActivity is DigitalCredentialsApiActivity
+        }
     }
 }

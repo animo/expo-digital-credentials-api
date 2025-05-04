@@ -16,7 +16,7 @@ export function ModalInner({ request }: { request: DigitalCredentialsRequest }) 
 
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-      <View style={{ backgroundColor: 'white', paddingBottom: insets.bottom }}>
+      <View style={{ backgroundColor: 'white', paddingBottom: insets.bottom, height: '50%' }}>
         <Group name="Digital Credentials API">
           <Button
             title="Send Response"
@@ -52,7 +52,6 @@ const styles = {
     marginBottom: 20,
   },
   group: {
-    flex: 1,
     backgroundColor: '#fff',
     padding: 20,
   },
