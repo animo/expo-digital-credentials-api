@@ -5,7 +5,7 @@
             android:theme="@style/Theme.Transparent"
             android:windowSoftInputMode="adjustResize"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="standard">
             <intent-filter>
                 <action android:name="androidx.identitycredentials.action.GET_CREDENTIALS"/>
                 <action android:name="androidx.credentials.registry.provider.action.GET_CREDENTIAL"/>
