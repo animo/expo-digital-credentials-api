@@ -72,6 +72,13 @@ export interface RegisterCredentialsOptions {
    * - `ubique`
    */
   matcher?: DigitalCredentialsApiMatcher
+
+  /**
+   * Whether to enable debug mode in the matcher.
+   *
+   * This is only supported for the `ubique` matcher and has no effect for other matchers
+   */
+  debug?: boolean
 }
 export type { DigitalCredentialsApiMatcher }
 

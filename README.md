@@ -112,7 +112,7 @@ When registering credentials you can also choose the matcher that is used. When 
   - Supports signed requests
   - Does not support icons
   - Does not support showing claim values
-- Ubique matcher taken from https://github.com/UbiqueInnovkation/oid4vp-wasm-matcher. ([current version](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.0.5)).
+- Ubique matcher taken from https://github.com/UbiqueInnovkation/oid4vp-wasm-matcher. ([current version](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.1.0)).
   - Supports SD-JWT VC and mDOC
   - Supports signed requests
   - Supports icons

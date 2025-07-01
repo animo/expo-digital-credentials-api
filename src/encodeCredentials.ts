@@ -88,7 +88,7 @@ function recursivelyMapSdJwtDc(
 }
 
 // TODO: we should allow registering a custom matcher and thus custom credential bytes structure
-export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
+export function getEncodedCredentialsBase64(items: CredentialItem[], { debug }: { debug?: boolean }): string {
   const textEncoder = new TextEncoder()
   const chunks: Uint8Array[] = []
 
@@ -182,6 +182,7 @@ export function getEncodedCredentialsBase64(items: CredentialItem[]): string {
 
   // Create final JSON structure
   const registryJson = {
+    debug,
     credentials: {
       mso_mdoc: mdocCredentials,
       'dc+sd-jwt': sdJwtCredentials,
@@ -226,6 +227,11 @@ type EncodedSdJwtDcCredentialJsonPath = {
 }
 
 interface EncodedJson {
+  /**
+   * Only supported in the ubique matcher
+   */
+  debug?: boolean
+
   credentials: {
     mso_mdoc: Record<
       // doctype

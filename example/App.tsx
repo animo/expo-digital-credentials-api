@@ -15,6 +15,7 @@ export default function App() {
 
   const register = (matcher: DigitalCredentialsApiMatcher) =>
     registerCredentials({
+      debug: true,
       matcher,
       credentials: [
         {

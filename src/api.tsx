@@ -9,7 +9,7 @@ import { ensureAndroid } from './util'
 
 export async function registerCredentials(options: RegisterCredentialsOptions): Promise<void> {
   ensureAndroid()
-  const credentialBytesBase64 = getEncodedCredentialsBase64(options.credentials)
+  const credentialBytesBase64 = getEncodedCredentialsBase64(options.credentials, { debug: options.debug })
 
   await Module?.registerCredentials(credentialBytesBase64, options.matcher ?? 'cmwallet')
 }
