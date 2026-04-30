@@ -18,6 +18,17 @@
         "backgroundColor": "#ffffff"
       },
       "package": "id.animo.digitalcredentials.example"
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.25"
+          }
+        }
+      ],
+      "./plugins/withKotlinMetadataSkip"
+    ]
   }
 }

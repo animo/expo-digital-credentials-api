@@ -12,5 +12,16 @@
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".DigitalCredentialsApiCreateCredentialActivity"
+            android:theme="@style/Theme.Transparent"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true"
+            android:launchMode="standard">
+            <intent-filter>
+                <action android:name="androidx.credentials.registry.provider.action.CREATE_CREDENTIAL"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

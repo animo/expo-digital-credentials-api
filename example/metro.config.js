@@ -18,8 +18,22 @@ config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, '../node_modules'),
 ]
 
+if (!config.resolver.assetExts.includes('wasm')) {
+  config.resolver.assetExts.push('wasm')
+}
+
 config.resolver.extraNodeModules = {
   '@animo-id/expo-digital-credentials-api': '..',
+  '@animo-id/expo-digital-credentials-api-cmwallet': path.resolve(__dirname, '../packages/matcher-cmwallet'),
+  '@animo-id/expo-digital-credentials-api-cmwallet-issuance': path.resolve(
+    __dirname,
+    '../packages/matcher-cmwallet-issuance'
+  ),
+  '@animo-id/expo-digital-credentials-api-ubique': path.resolve(__dirname, '../packages/matcher-ubique'),
+  '@animo-id/expo-digital-credentials-api-aptitude-consortium': path.resolve(
+    __dirname,
+    '../packages/matcher-aptitude-consortium'
+  ),
 }
 
 config.watchFolders = [path.resolve(__dirname, '..')]

@@ -37,6 +37,9 @@ android {
     versionCode 1
     versionName "0.1.0"
   }
+  kotlinOptions {
+    freeCompilerArgs += "-Xskip-metadata-version-check"
+  }
   lintOptions {
     abortOnError false
   }
@@ -44,8 +47,8 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation 'androidx.credentials.registry:registry-digitalcredentials-mdoc:1.0.0-alpha01'
-  implementation 'androidx.credentials.registry:registry-digitalcredentials-preview:1.0.0-alpha01'
-  implementation 'androidx.credentials.registry:registry-provider:1.0.0-alpha01'
-  implementation 'androidx.credentials.registry:registry-provider-play-services:1.0.0-alpha01'
+  def registryVersion = "1.0.0-alpha04"
+  implementation "androidx.credentials.registry:registry-digitalcredentials-mdoc:${registryVersion}"
+  implementation "androidx.credentials.registry:registry-provider:${registryVersion}"
+  implementation "androidx.credentials.registry:registry-provider-play-services:${registryVersion}"
 }

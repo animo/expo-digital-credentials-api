@@ -32,7 +32,7 @@
 </p>
 
 <p align="center">
-  <a href="#getting-started">Getting Started</a> 
+  <a href="#minimal-getting-started">Getting Started</a> 
   &nbsp;|&nbsp;
   <a href="#usage">Usage</a> 
   &nbsp;|&nbsp;
@@ -45,7 +45,7 @@
 
 An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set up and configure [Digital Credentials API](https://digitalcredentials.dev) for Android in Expo apps.
 
-- Currently two default matcher implementations for matching credentials based on a request is bundled, which only supports _mdoc_, _dc+sd-jwt_, _openid4vp_ , _dcql_, _signed requests_ and _unsigned requests_. In the future support for a custom matcher might be added.
+- Matcher WASM binaries are shipped inside the matcher wrapper packages and loaded at runtime; the base package only accepts raw matcher bytes.
 - During development when the activity is launched and the application is already running this results in render errors. In production these errors won't occur, but it does hinder the development experience. We're still looking for a solution.
 - This library is tested with Expo 52 and React Native 0.76. It uses some hacks to use Kotlin 2.0.21, and is likely to break in non-default application setups. React Native 77 will use Kotlin 2 by default, and these hacks shouldn't be needed anymore.
 - When using the CMWallet matcher, icons provided for credentials are not rendered.
@@ -58,7 +58,18 @@ An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set u
   <img style="margin: 5px;" src="./assets/overlay.png" width="200px">
 </p>
 
-## Getting Started
+## Matcher Packages
+
+| Package | Purpose |
+| --- | --- |
+| `@animo-id/expo-digital-credentials-api-cmwallet` | Matcher wrapper for the CMWallet registry format |
+| `@animo-id/expo-digital-credentials-api-ubique` | Matcher wrapper for the Ubique registry format |
+| `@animo-id/expo-digital-credentials-api-aptitude-consortium` | Matcher wrapper for the Aptitude Consortium registry format |
+| `@animo-id/expo-digital-credentials-api-cmwallet-issuance` | OpenID4VCI creation options wrapper |
+
+## Minimal Getting Started
+
+This is the smallest working setup: install, prebuild, register an overlay component, and register matcher bytes.
 
 Install the module using the following command.
 
@@ -73,6 +84,13 @@ npm install @animo-id/expo-digital-credentials-api
 pnpm install @animo-id/expo-digital-credentials-api
 ```
 
+Install a matcher wrapper package from the table above. If you need OpenID4VCI issuance, install the creation options wrapper.
+
+```sh
+pnpm install <matcher-wrapper-package>
+pnpm install <issuance-wrapper-package>
+```
+
 Then prebuild the application so the Expo Module wrapper can be added as native dependency (If you aren't making any manual modification to the Android directories you can add them to the gitignore of your project and generate them on demand):
 
 ```sh
@@ -83,7 +101,31 @@ yarn expo prebuild
 npx expo prebuild
 ```
 
-That's it, you now have the Digital Credentials API configured for your Android project.
+Register the overlay component early (usually in `index.ts`):
+
+```ts
+import { registerRootComponent } from "expo";
+import registerGetCredentialComponent, {
+  registerCreateCredentialComponent,
+} from "@animo-id/expo-digital-credentials-api/register";
+import App from "./App";
+import GetOverlay from "./GetOverlay";
+import CreateOverlay from "./CreateOverlay";
+
+registerGetCredentialComponent(GetOverlay);
+registerCreateCredentialComponent(CreateOverlay);
+registerRootComponent(App);
+```
+
+Register credentials (example for CMWallet):
+
+```ts
+import { registerCredentials } from "@animo-id/expo-digital-credentials-api-cmwallet";
+
+await registerCredentials({ credentials });
+```
+
+That's it. Your app can now receive Digital Credentials API intents.
 
 > [!WARNING]  
 > You might need to set the Kotlin version of your project to 2.0.21. To do this, add the [`expo-build-properties`](https://docs.expo.dev/versions/latest/sdk/build-properties/) dependency to your project, and configure it with `android.kotlinVersion` set to `'2.0.21'`.
@@ -101,13 +143,48 @@ That's it, you now have the Digital Credentials API configured for your Android 
 
 ## Usage
 
-You can now import `@animo-id/expo-digital-credentials-api` in your application.
+This section dives into each feature in detail.
+
+The base package (`@animo-id/expo-digital-credentials-api`) exposes low-level APIs that accept raw bytes and matcher WASM bytes. For object-based configuration (including runtime loading of matcher WASM), use the matcher packages listed in the table above.
+
+If you call the base API directly, you must supply `matcherBytes` as a `Uint8Array`. The matcher packages expose `loadMatcherBytes()` helpers to load the bundled WASM at runtime.
+
+If you use a custom Metro config, ensure `wasm` is included in `resolver.assetExts` so the bundled matcher assets are packaged correctly.
+
+### Allowed Apps (Origin Verification)
+
+The native module uses a JSON allowlist to map calling app signatures to verified origins. By default it uses the bundled `allowedApps.json`, but you can override it at runtime:
+
+```ts
+import { setAllowedApps } from "@animo-id/expo-digital-credentials-api";
+
+setAllowedApps({
+  allowedAppsJson: JSON.stringify({
+    apps: [
+      {
+        type: "android",
+        info: {
+          package_name: "com.example.browser",
+          signatures: [
+            {
+              build: "release",
+              cert_fingerprint_sha256: "AA:BB:CC:...",
+            },
+          ],
+        },
+      },
+    ],
+  }),
+});
+```
+
+Pass `null` or an empty string to clear the override and fall back to the bundled list.
 
 ### Registering Credentials
 
 To make Android aware of the credentials available in your wallet, you need to register the credentials. Every time the credentials in your application changes, you should call this method again.
 
-When registering credentials you can also choose the matcher that is used. When registering credentials with a new matcher the old matcher will not be used anymore (the latest register call always overrides previous calls). The supported matchers are:
+Choose the matcher package that fits your needs. Registering credentials for a matcher overrides the previous registration for that matcher. The supported matchers are:
 
 - CMWallet matcher taken from https://github.com/digitalcredentialsdev/CMWallet. ([current version](https://github.com/digitalcredentialsdev/CMWallet/blob/f4aa9ebbeaf55fa3973b467701887464be3d4b51/app/src/main/assets/openid4vp.wasm))
   - Supports SD-JWT VC and mDOC
@@ -120,71 +197,94 @@ When registering credentials you can also choose the matcher that is used. When 
   - Supports icons
   - Supports showing claim values
 
-```tsx
-import {
-  registerCredentials,
-  RegisterCredentialsOptions,
-} from "@animo-id/expo-digital-credentials-api";
+The matcher packages accept unencoded objects in `registerCredentials`. If you need the raw bytes (e.g., to call the base API), use `encodeCredentials` from the matcher package.
 
-// See RegisterCredentialsOptions for all options
-await registerCredentials({
-  matcher: "cmwallet",
-  credentials: [
-    {
-      id: "1",
-      display: {
-        title: "Drivers License",
-        subtitle: "Issued by Utopia",
-        claims: [
-          {
-            path: ["org.iso.18013.5.1", "family_name"],
-            displayName: "Family Name",
-          },
-        ],
-        iconDataUrl:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR4nOzPUQkAIQDA0OMwpxksY19D+PEQ9hJsY6/5vezXAbca0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0E4AAAD//7vSAeZjAN7dAAAAAElFTkSuQmCC",
-      },
-      credential: {
-        doctype: "org.iso.18013.5.1.mDL",
-        format: "mso_mdoc",
-        namespaces: {
-          "org.iso.18013.5.1": {
-            family_name: "Glastra",
-          },
-        },
-      },
-    },
-    {
-      id: "2",
-      display: {
-        title: "PID",
-        subtitle: "Issued by Utopia",
-        claims: [
-          {
-            path: ["first_name"],
-            displayName: "First Name",
-          },
-          {
-            path: ["address", "city"],
-            displayName: "Resident City",
-          },
-        ],
-        iconDataUrl:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR4nOzPUQkAIQDA0OMwpxksY19D+PEQ9hJsY6/5vezXAbca0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0E4AAAD//7vSAeZjAN7dAAAAAElFTkSuQmCC",
-      },
-      credential: {
-        vct: "eu.europa.ec.eudi.pid.1",
-        format: "dc+sd-jwt",
-        claims: {
-          first_name: "Timo",
-          address: {
-            city: "Somewhere",
-          },
-        },
-      },
-    },
-  ],
-} satisfies RegisterCredentialsOptions);
+```tsx
+import { registerCredentials } from "@animo-id/expo-digital-credentials-api-cmwallet";
+
+await registerCredentials({ credentials });
+```
+
+### Registering Creation Options (OpenID4VCI)
+
+To allow OpenID4VCI issuance, register creation options with the CMWallet issuance matcher:
+
+```tsx
+import { encodeIssuanceCreationOptions, registerCreationOptions } from "@animo-id/expo-digital-credentials-api-cmwallet-issuance";
+
+// Build creationOptions bytes from the matcher schema
+const creationOptions = encodeIssuanceCreationOptions({
+  display: {
+    title: "My Wallet",
+    subtitle: "Save your document",
+    iconDataUrl: "data:image/png;base64,...",
+  },
+  issuerAllowlist: ["https://issuer.example"],
+});
+await registerCreationOptions({
+  creationOptions,
+});
+```
+
+### Request Payloads
+
+#### Get Credential Request (JS)
+
+```ts
+type DigitalCredentialsRequest = {
+  // Normalized request JSON extracted from the Android bundle
+  request?: {
+    requests?: Array<{ protocol: string; data: unknown }>
+    providers?: Array<{ protocol: string; request: string }>
+  }
+
+  // Convenience fields when available
+  origin?: string | null
+  packageName?: string
+  signingInfo?: string
+
+  // Normalized credential option entries (Android)
+  credentialOptions?: Array<{
+    type?: string
+    allowedProviders?: unknown
+    isSystemProviderRequired?: boolean
+    candidateQueryData?: Record<string, unknown>
+    retrievalData?: Record<string, unknown>
+  }>
+
+  // Optional matcher selection metadata
+  selectedEntry?: { providerIndex: number; credentialId: string }
+  selection?: {
+    requestIdx: number
+    creds: Array<{
+      entryId: string
+      matchedClaimPaths?: Array<Array<string | number | null>>
+      metadata?: Record<string, unknown>
+    }>
+  }
+
+  // Raw ProviderGetCredentialRequest bundle JSON (Android), for debugging
+  sourceBundle?: unknown
+
+  // Additional raw keys if present
+  [key: string]: unknown
+}
+```
+
+Notes:
+- `request`, `origin`, and `packageName` are derived from the Android bundle when possible.
+- `sourceBundle` keeps the full raw bundle for debugging or custom parsing.
+
+#### Create Credential Request (JS)
+
+```ts
+type DigitalCredentialsCreateRequest = {
+  origin: string | null
+  packageName: string
+  type: string
+  // Raw request JSON from the system, if provided
+  request: object | null
+}
 ```
 
 ### Handling Credential Request
@@ -208,10 +308,13 @@ import { MyCustomComponent } from "./MyCustomComponent";
 // import the component registration method
 // make sure to import this from the /register path
 // so it doesn't load the native module yet, as that will prevent the app from correctly loading
-import registerGetCredentialComponent from "@animo-id/expo-digital-credentials-api/register";
+import registerGetCredentialComponent, {
+  registerCreateCredentialComponent,
+} from "@animo-id/expo-digital-credentials-api/register";
 
 // Registers the componetn to be used for sharing credentials
 registerGetCredentialComponent(MyCustomComponent);
+registerCreateCredentialComponent(MyCreateComponent);
 
 // Default expo method call
 registerRootComponent(App);
@@ -247,6 +350,43 @@ export function MyCustomComponent({
         title="Send Error Response"
         onPress={() =>
           sendErrorResponse({ errorMessage: "Send error response" })
+        }
+      />
+    </View>
+  );
+}
+```
+
+#### Handling Create Credential Request (OpenID4VCI)
+
+The create-credential request is passed to the registered component as `request` with type `DigitalCredentialsCreateRequest`:
+
+```tsx
+import {
+  type DigitalCredentialsCreateRequest,
+  sendCreateErrorResponse,
+  sendCreateResponse,
+} from "@animo-id/expo-digital-credentials-api";
+
+export function MyCreateComponent({
+  request,
+}: {
+  request: DigitalCredentialsCreateRequest;
+}) {
+  return (
+    <View style={{ width: "100%" }}>
+      <Button
+        title="Send Create Response"
+        onPress={() =>
+          sendCreateResponse({
+            response: JSON.stringify({ protocol: "openid4vci", data: {} }),
+          })
+        }
+      />
+      <Button
+        title="Send Create Error Response"
+        onPress={() =>
+          sendCreateErrorResponse({ errorMessage: "Send error response" })
         }
       />
     </View>

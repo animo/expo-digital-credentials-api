@@ -55,10 +55,6 @@ class DigitalCredentialsApiActivity : ReactActivity() {
                     Bundle().apply {
                         putString("request", DigitalCredentialsApiSingleton.getRequest(context, intent))
                     }
-
-            override fun onNewIntent(intent: Intent?): Boolean {
-                return super.onNewIntent(intent)
-            }
         }
     }
 }

@@ -1,0 +1,19 @@
+{
+  "name": "@animo-id/expo-digital-credentials-api-cmwallet-issuance",
+  "version": "0.0.0",
+  "description": "CMWallet issuance matcher wrapper for Expo Digital Credentials API",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@animo-id/expo-digital-credentials-api": "workspace:*"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "expo-asset": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

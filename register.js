@@ -1,3 +1,2 @@
-import register from './build/register'
-
-export default register
+export { default } from './build/register'
+export { registerCreateCredentialComponent } from './build/register'

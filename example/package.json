@@ -9,6 +9,11 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@animo-id/expo-digital-credentials-api": "workspace:*",
+    "@animo-id/expo-digital-credentials-api-aptitude-consortium": "workspace:*",
+    "@animo-id/expo-digital-credentials-api-cmwallet": "workspace:*",
+    "@animo-id/expo-digital-credentials-api-cmwallet-issuance": "workspace:*",
+    "@animo-id/expo-digital-credentials-api-ubique": "workspace:*",
     "expo": "~52.0.33",
     "expo-build-properties": "^0.13.2",
     "react": "18.3.1",

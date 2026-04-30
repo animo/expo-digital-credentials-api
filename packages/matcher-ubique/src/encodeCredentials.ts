@@ -1,7 +1,6 @@
-import { decodeBase64, encodeBase64 } from './util'
+import { decodeBase64, stripImageDataUrl } from './util'
 
 export interface CredentialDisplayData {
-  // TODO: also align more with OID4VCI input?
   title: string
   subtitle?: string
 
@@ -39,12 +38,10 @@ export interface CredentialConfigurationMdoc extends CredentialConfiguration {
    * to do matching for those claims
    */
   namespaces: Record<string, Record<string, string | number | boolean | null>>
-
-  // TODO: support claim name mapping
 }
 
 export type SdJwtDcClaims = {
-  [key: string]: string | number | boolean | Array<SdJwtDcClaims> | SdJwtDcClaims
+  [key: string]: string | number | boolean | Array<string> | Array<SdJwtDcClaims> | SdJwtDcClaims
 }
 
 export interface CredentialConfigurationSdJwtDc extends CredentialConfiguration {
@@ -87,8 +84,7 @@ function recursivelyMapSdJwtDc(
   return result
 }
 
-// TODO: we should allow registering a custom matcher and thus custom credential bytes structure
-export function getEncodedCredentialsBase64(items: CredentialItem[], { debug }: { debug?: boolean }): string {
+export function encodeCredentials(items: CredentialItem[], { debug }: { debug?: boolean } = {}): Uint8Array {
   const textEncoder = new TextEncoder()
   const chunks: Uint8Array[] = []
 
@@ -96,9 +92,7 @@ export function getEncodedCredentialsBase64(items: CredentialItem[], { debug }: 
   const iconRecord: Record<string, IconEntry> = {}
   for (const item of items) {
     const iconBytes = item.display.iconDataUrl
-      ? decodeBase64(
-          item.display.iconDataUrl.replace('data:image/png;base64,', '').replace('data:image/jpg;base64,', '')
-        )
+      ? decodeBase64(stripImageDataUrl(item.display.iconDataUrl))
       : new Uint8Array(0)
     iconRecord[item.id] = { iconValue: iconBytes, iconOffset: 0 }
   }
@@ -202,7 +196,7 @@ export function getEncodedCredentialsBase64(items: CredentialItem[], { debug }: 
     offset += chunk.length
   }
 
-  return encodeBase64(result)
+  return result
 }
 
 type EncodedValue = string | number | boolean | undefined
@@ -218,12 +212,7 @@ interface EncodedCredentialJsonCommon {
 }
 
 type EncodedSdJwtDcCredentialJsonPath = {
-  // top-level key
-  [key: string]:
-    | // end-value (everything except object, so also arrays)
-    { value?: EncodedValue; display: string }
-    // object
-    | EncodedSdJwtDcCredentialJsonPath
+  [key: string]: { value?: EncodedValue; display: string } | EncodedSdJwtDcCredentialJsonPath
 }
 
 interface EncodedJson {
