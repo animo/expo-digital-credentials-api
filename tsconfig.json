@@ -1,7 +1,9 @@
 {
   "extends": "expo-module-scripts/tsconfig.base",
   "compilerOptions": {
-    "outDir": "./build"
+    "outDir": "./build",
+    // The base config sets `["jest"]`; tests import their globals from vitest explicitly.
+    "types": []
   },
   "include": ["./src"]
 }

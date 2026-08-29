@@ -41,6 +41,9 @@ jobs:
       - name: Check types
         run: pnpm types:check
 
+      - name: Test
+        run: pnpm test
+
   continuous-deployment:
     if: github.event_name == 'workflow_dispatch'
 

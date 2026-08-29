@@ -1,6 +1,9 @@
 {
-  "platforms": ["android"],
+  "platforms": ["android", "ios"],
   "android": {
     "modules": ["id.animo.digitalcredentials.DigitalCredentialsApiModule"]
+  },
+  "ios": {
+    "modules": ["DigitalCredentialsApiModule"]
   }
 }

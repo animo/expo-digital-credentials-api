@@ -1,13 +1,41 @@
 export {
-  DigitalCredentialsRequest,
-  RegisterCredentialsOptions,
-  SendErrorResponseOptions,
-  SendResponseOptions,
-  DigitalCredentialsApiMatcher,
-} from './DigitalCredentialsApi.types'
-export {
+  getRegistrationStatus,
+  getSharedContainerPath,
+  isSupported,
+  registerCredential,
   registerCredentials,
-  sendErrorResponse,
-  sendResponse,
-  isGetCredentialActivity,
+  removeAllCredentials,
+  removeCredential,
 } from './api'
+export { defaultMatcher, matcherProtocols } from './matchers'
+export type {
+  AndroidDcApiRequest,
+  DcApiCredential,
+  DcApiCredentialDisplay,
+  DcApiMatcher,
+  DcApiMdocCredential,
+  DcApiProtocol,
+  DcApiProtocolRequest,
+  DcApiRequest,
+  DcApiResponseOptions,
+  DcApiSdJwtCredential,
+  IosDcApiRequest,
+  IosDocumentRequest,
+  IosDocumentRequestSet,
+  IosPresentmentRequest,
+  IosReaderAuthentication,
+  IosRequestedElement,
+  IosRegistrationOptions,
+  IosSupportedDocumentType,
+  IsoMdocProtocolRequest,
+  IsoMdocResponseOptions,
+  Openid4vpProtocol,
+  Openid4vpProtocolRequest,
+  Openid4vpResponseOptions,
+  RegisterCredentialOptions,
+  RegisterCredentialsOptions,
+  RegistrationStatus,
+  SdJwtClaims,
+} from './types'
+export { dcApiProtocols, iosSupportedDocumentTypes } from './types'
+export { DcApiUnsupportedError } from './util'

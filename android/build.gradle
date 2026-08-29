@@ -44,8 +44,10 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation 'androidx.credentials.registry:registry-digitalcredentials-mdoc:1.0.0-alpha01'
-  implementation 'androidx.credentials.registry:registry-digitalcredentials-preview:1.0.0-alpha01'
-  implementation 'androidx.credentials.registry:registry-provider:1.0.0-alpha01'
-  implementation 'androidx.credentials.registry:registry-provider-play-services:1.0.0-alpha01'
+  // `DigitalCredentialsApiActivity` is an AppCompatActivity, which expo-modules-core requires of
+  // whatever hosts it. React Native brings this transitively, but it is a direct dependency here.
+  implementation "androidx.appcompat:appcompat:1.7.0"
+  implementation 'androidx.credentials.registry:registry-digitalcredentials-mdoc:1.0.0-alpha05'
+  implementation 'androidx.credentials.registry:registry-provider:1.0.0-alpha05'
+  implementation 'androidx.credentials.registry:registry-provider-play-services:1.0.0-alpha05'
 }
