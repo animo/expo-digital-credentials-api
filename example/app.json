@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "expo-digital-credentials-api-example",
+    "name": "Expo DC API Example",
     "slug": "expo-digital-credentials-api-example",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "jsEngine": "hermes",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -18,6 +19,20 @@
         "backgroundColor": "#ffffff"
       },
       "package": "id.animo.digitalcredentials.example"
-    }
+    },
+    "ios": {
+      "bundleIdentifier": "id.animo.digitalcredentials.example"
+    },
+    "plugins": [
+      [
+        "../app.plugin.js",
+        {
+          "ios": {
+            "documentTypes": ["org.iso.18013.5.1.mDL", "eu.europa.ec.eudi.pid.1"],
+            "excludedPackages": ["react-native-safe-area-context"]
+          }
+        }
+      ]
+    ]
   }
 }

@@ -1,34 +1,52 @@
 {
   "name": "@animo-id/expo-digital-credentials-api",
   "version": "0.0.0",
-  "description": "Expo wrapper around Android Digital Credentials API",
+  "description": "Expo module for the W3C Digital Credentials API on Android and iOS (OpenID4VP and ISO 18013-7 Annex C)",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    },
+    "./request-handler": {
+      "types": "./build/requestHandler.d.ts",
+      "default": "./build/requestHandler.js"
+    },
+    "./app.plugin.js": "./app.plugin.js",
+    "./package.json": "./package.json"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp build/register.d.ts register.d.ts",
+    "build": "EXPO_NONINTERACTIVE=1 expo-module build && EXPO_NONINTERACTIVE=1 expo-module build plugin",
     "style:check": "biome check --unsafe",
     "style:fix": "biome check --write --unsafe",
-    "types:check": "tsc -p tsconfig.json",
+    "types:check": "tsc -p tsconfig.json --noEmit && tsc -p plugin/tsconfig.json --noEmit",
     "expo-module": "expo-module",
     "open:android": "open -a \"Android Studio\" example/android",
-    "release": "release-it"
+    "release": "release-it",
+    "test": "vitest run",
+    "build:watch": "expo-module build"
   },
   "keywords": [
-    "react-native",
-    "expo",
-    "w3c-digital-credentials-api",
-    "oid4vp",
-    "w3c",
-    "digital-credentials",
-    "mdoc",
-    "sd-jwt-vc",
-    "vc+sd-jwt",
-    "dc+sd-jwt",
     "android",
-    "mso_mdoc"
+    "dc+sd-jwt",
+    "digital-credentials",
+    "expo",
+    "identity-document-services",
+    "ios",
+    "iso-18013-7",
+    "mdoc",
+    "mso_mdoc",
+    "oid4vp",
+    "org-iso-mdoc",
+    "react-native",
+    "sd-jwt-vc",
+    "dc+sd-jwt",
+    "w3c",
+    "w3c-digital-credentials-api"
   ],
   "repository": "https://github.com/animo/expo-digital-credentials-api",
   "bugs": {
@@ -39,17 +57,23 @@
   "homepage": "https://github.com/animo/expo-digital-credentials-api#readme",
   "devDependencies": {
     "@biomejs/biome": "1.8.1",
-    "@types/react": "~18.3.12",
-    "expo": "~52.0.0",
-    "expo-module-scripts": "^4.0.3",
-    "react-native": "0.76.0",
+    "@expo/config-plugins": "~55.0.11",
+    "@types/node": "^22.19.3",
+    "@types/react": "~19.2.17",
+    "expo": "~55.0.0",
+    "expo-module-scripts": "~55.0.2",
+    "react-native": "0.83.10",
     "release-it": "^17.4.1",
-    "typescript": "^5.5.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "expo": "*",
+    "expo": ">=52",
     "react": "*",
-    "react-native": "*"
+    "react-native": ">=0.76"
   },
-  "packageManager": "pnpm@10.3.0+sha512.ee592eda8815a8a293c206bb0917c4bb0ff274c50def7cbc17be05ec641fc2d1b02490ce660061356bd0d126a4d7eb2ec8830e6959fb8a447571c631d5a2442d"
+  "packageManager": "pnpm@11.22.0+sha512.1ff870c4c6133dfd88fb2afc46dd13d47f09c9794b438c6fdb47ca98caf3bc16381ee0be93a091b8e3824cf01f889f46d7d9e20910fb0be1ab0fb5baa80dd621",
+  "dependencies": {
+    "@expo/plist": "^0.5.4"
+  }
 }

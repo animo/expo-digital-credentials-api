@@ -1,10 +1,10 @@
 package id.animo.digitalcredentials
 
-import android.app.Activity
 import android.app.Activity.RESULT_OK
 import android.content.Context
 import android.util.Base64
-import android.util.Log
+import androidx.credentials.registry.provider.RegistryManager
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -14,49 +14,55 @@ class DigitalCredentialsApiModule : Module() {
     private val context: Context
         get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
+    private val requestActivity
+        get() = DigitalCredentialsApiSingleton.currentRequestActivity ?: throw NoRequestException()
 
     override fun definition() = ModuleDefinition {
         Name("DigitalCredentialsApi")
 
+        Function("isSupported") { true }
+
+        // No user permission is involved on Android: a registered wallet always surfaces.
+        AsyncFunction("getRegistrationStatus") { "authorized" }
+
         AsyncFunction("registerCredentials") Coroutine
-                { credentialBytesBase64: String, _matcher: String? ->
-                    Log.d("DigitalCredentialsApi", "registerCredentials")
-
+                { credentialsBase64: String, matcher: String ->
                     // Bytes are encoded as base64 for easy passing from TS -> Kotlin
-                    val credentialBytes = Base64.decode(credentialBytesBase64, Base64.DEFAULT)
-
-                    val matcher = _matcher?.let { Matcher.fromStringIdentifier(it) } ?: Matcher.CMWALLET
-
-                    DigitalCredentialsApiSingleton.registerCredentials(context, credentialBytes, matcher)
+                    DigitalCredentialsApiSingleton.registerCredentials(
+                            context,
+                            Base64.decode(credentialsBase64, Base64.DEFAULT),
+                            Matcher.fromIdentifier(matcher)
+                    )
                     return@Coroutine
                 }
 
-        Function("sendResponse") { response: String ->
-            Log.d("DigitalCredentialsApi", "sendResponse")
+        // Explicit type argument: with no parameters the `Coroutine` infix overloads are ambiguous.
+        AsyncFunction("removeAllCredentials").Coroutine<Unit> {
+            DigitalCredentialsApiSingleton.clearRegistries(RegistryManager.create(context))
+        }
 
-            val currentActivity = appContext.activityProvider?.currentActivity ?: throw Exceptions.MissingActivity()
-
-            Log.d("DigitalCredentialsApi", "Component ${currentActivity.componentName.toString()}")
-
-            val result = DigitalCredentialsApiSingleton.getResponseIntent(response)
-            currentActivity.setResult(RESULT_OK, result)
-            currentActivity.finishAndRemoveTask()
+        AsyncFunction("sendResponse") { credentialResponse: String ->
+            val activity = requestActivity
+            activity.setResult(
+                    RESULT_OK,
+                    DigitalCredentialsApiSingleton.getResponseIntent(
+                            activity.intent,
+                            credentialResponse
+                    )
+            )
+            activity.finishAndRemoveTask()
         }
 
         Function("sendErrorResponse") { errorMessage: String ->
-            Log.d("DigitalCredentialsApi", "sendErrorResponse")
-
-            val currentActivity = appContext.activityProvider?.currentActivity ?: throw Exceptions.MissingActivity()
-            Log.d("DigitalCredentialsApi", "Component ${currentActivity.componentName.toString()}")
-
-            val result = DigitalCredentialsApiSingleton.getErrorResponseIntent(errorMessage)
-            currentActivity.setResult(RESULT_OK, result)
-            currentActivity.finishAndRemoveTask()
-        }
-
-        Function("isGetCredentialActivity") {
-            val currentActivity = appContext.activityProvider?.currentActivity
-            return@Function currentActivity is DigitalCredentialsApiActivity
+            val activity = requestActivity
+            activity.setResult(
+                    RESULT_OK,
+                    DigitalCredentialsApiSingleton.getErrorResponseIntent(errorMessage)
+            )
+            activity.finishAndRemoveTask()
         }
     }
 }
+
+internal class NoRequestException :
+        CodedException("There is no credential request in flight")
