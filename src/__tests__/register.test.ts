@@ -6,6 +6,8 @@ const mockNativeModule = vi.hoisted(() => ({
   registerDocuments: vi.fn(),
   addDocument: vi.fn(),
   registerCredentials: vi.fn(),
+  // What the config plugin mirrored out of the app's `…mobile-document-types` entitlement.
+  getEntitledDocumentTypes: vi.fn<() => string[] | null>(() => ['org.iso.18013.5.1.mDL']),
 }))
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
@@ -27,6 +29,16 @@ const mdl: DcApiCredential = {
   },
 }
 
+const photoId: DcApiCredential = {
+  id: 'photo-id-1',
+  display: { title: 'Photo ID' },
+  credential: {
+    format: 'mso_mdoc',
+    doctype: 'org.iso.23220.photoid.1',
+    namespaces: { 'org.iso.23220.1': { family_name_unicode: 'Glastra' } },
+  },
+}
+
 const sdJwtPid: DcApiCredential = {
   id: 'pid-1',
   display: { title: 'PID' },
@@ -36,7 +48,10 @@ const sdJwtPid: DcApiCredential = {
 const registeredDocuments = () => mockNativeModule.registerDocuments.mock.calls[0][0]
 
 describe('registerCredentials on ios', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockNativeModule.getEntitledDocumentTypes.mockReturnValue(['org.iso.18013.5.1.mDL'])
+  })
 
   test('hands the OS only what it matches on, skipping what it cannot present', async () => {
     await registerCredentials({ credentials: [mdl, sdJwtPid] })
@@ -73,6 +88,29 @@ describe('registerCredentials on ios', () => {
     ])
   })
 
+  test('skips a document type the app is not entitled to, which the OS would reject', async () => {
+    await registerCredentials({ credentials: [mdl, photoId] })
+
+    expect(registeredDocuments()).toEqual([
+      {
+        documentIdentifier: 'mdl-1',
+        documentType: 'org.iso.18013.5.1.mDL',
+        supportedAuthorityKeyIdentifiers: [],
+      },
+    ])
+  })
+
+  test("falls back to Apple's full set when the entitlement was not mirrored into the Info.plist", async () => {
+    mockNativeModule.getEntitledDocumentTypes.mockReturnValue(null)
+
+    await registerCredentials({ credentials: [mdl, photoId] })
+
+    expect(registeredDocuments().map((registration: { documentType: string }) => registration.documentType)).toEqual([
+      'org.iso.18013.5.1.mDL',
+      'org.iso.23220.photoid.1',
+    ])
+  })
+
   test('rejects an unusable date instead of registering nothing', async () => {
     await expect(
       registerCredentials({ credentials: [{ ...mdl, ios: { invalidationDate: new Date('not a date') } }] })
@@ -83,7 +121,10 @@ describe('registerCredentials on ios', () => {
 })
 
 describe('registerCredential on ios', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockNativeModule.getEntitledDocumentTypes.mockReturnValue(['org.iso.18013.5.1.mDL'])
+  })
 
   test('adds one document without replacing the registered set', async () => {
     await registerCredential({ credential: { ...mdl, ios: { supportedAuthorityKeyIdentifiers: ['a2V5'] } } })
@@ -99,6 +140,14 @@ describe('registerCredential on ios', () => {
   test('throws for a credential iOS cannot present, rather than silently registering nothing', async () => {
     await expect(registerCredential({ credential: sdJwtPid })).rejects.toThrow(
       "Credential 'pid-1' cannot be registered on iOS"
+    )
+
+    expect(mockNativeModule.addDocument).not.toHaveBeenCalled()
+  })
+
+  test('throws for a document type the app is not entitled to, naming what it is entitled to', async () => {
+    await expect(registerCredential({ credential: photoId })).rejects.toThrow(
+      "Credential 'photo-id-1' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: org.iso.18013.5.1.mDL."
     )
 
     expect(mockNativeModule.addDocument).not.toHaveBeenCalled()

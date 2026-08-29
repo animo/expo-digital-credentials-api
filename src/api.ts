@@ -38,8 +38,9 @@ export async function getRegistrationStatus(): Promise<RegistrationStatus> {
  *
  * Credentials the platform cannot present are skipped rather than rejected, so a wallet can pass its
  * whole set on both platforms. On iOS that means everything except `mso_mdoc` credentials whose
- * document type is in {@link iosSupportedDocumentTypes} — the OS does the matching there, and only
- * knows those. The first call on iOS triggers the system permission prompt.
+ * document type the app is entitled to provide — the config plugin's `ios.documentTypes`, a subset
+ * of {@link iosSupportedDocumentTypes}. The OS does the matching there, and only knows those. The
+ * first call on iOS triggers the system permission prompt.
  *
  * Only what the OS matches on leaves the app: the document identifier and type, and the gates in
  * {@link DcApiCredential.ios}. The credentials themselves stay in the wallet's own storage, which is
@@ -51,7 +52,10 @@ export async function registerCredentials(options: RegisterCredentialsOptions): 
   const module = getNativeModule('registerCredentials')
 
   if (Platform.OS === 'ios') {
-    const registrations = options.credentials.filter(isRegistrableOnIos).map(toDocumentRegistration)
+    const documentTypes = entitledDocumentTypes(module)
+    const registrations = options.credentials
+      .filter((credential) => isRegistrableOnIos(credential, documentTypes))
+      .map(toDocumentRegistration)
 
     await module.registerDocuments(registrations)
     return registrations.map((registration) => registration.documentIdentifier)
@@ -75,7 +79,7 @@ export async function registerCredentials(options: RegisterCredentialsOptions): 
  * its own. On Android the whole credential registry is replaced at once, so a wallet adding a single
  * credential calls {@link registerCredentials} with its full set.
  *
- * Unlike {@link registerCredentials} a credential iOS cannot present throws rather than being
+ * Unlike {@link registerCredentials} a credential this build cannot present throws rather than being
  * skipped: the caller named this one credential, and silently registering nothing would look exactly
  * like success.
  */
@@ -88,9 +92,10 @@ export async function registerCredential(options: RegisterCredentialOptions): Pr
     )
   }
 
-  if (!isRegistrableOnIos(options.credential)) {
+  const documentTypes = entitledDocumentTypes(module)
+  if (!isRegistrableOnIos(options.credential, documentTypes)) {
     throw new DcApiUnsupportedError(
-      `Credential '${options.credential.id}' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: ${iosSupportedDocumentTypes.join(', ')}.`
+      `Credential '${options.credential.id}' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: ${documentTypes.join(', ')}. Document types are configured with the config plugin's 'ios.documentTypes'.`
     )
   }
 
@@ -174,14 +179,25 @@ function encodeInvalidationDate(invalidationDate: Date | undefined, credentialId
 }
 
 /**
- * The OS matches on document type, so only mdocs with a type Apple allows in the
- * `…mobile-document-types` entitlement can be registered at all.
+ * The document types this build can actually register: the ones its `…mobile-document-types`
+ * entitlement lists, which is what the config plugin's `ios.documentTypes` sets — registering
+ * anything else is rejected by the OS.
+ *
+ * Falls back to everything Apple allows when the app was built without the plugin mirroring the
+ * entitlement into its Info.plist, or by a version of this package that did not yet mirror it.
+ * Nothing here can be read out of the entitlement itself, so that is as close as it gets.
+ */
+function entitledDocumentTypes(module: { getEntitledDocumentTypes?(): string[] | null }): readonly string[] {
+  return module.getEntitledDocumentTypes?.() ?? iosSupportedDocumentTypes
+}
+
+/**
+ * The OS matches on document type, so only mdocs with a type this build is entitled to provide can
+ * be registered at all.
  */
 function isRegistrableOnIos(
-  credential: DcApiCredential
+  credential: DcApiCredential,
+  documentTypes: readonly string[]
 ): credential is DcApiCredential & { credential: DcApiMdocCredential } {
-  return (
-    credential.credential.format === 'mso_mdoc' &&
-    (iosSupportedDocumentTypes as readonly string[]).includes(credential.credential.doctype)
-  )
+  return credential.credential.format === 'mso_mdoc' && documentTypes.includes(credential.credential.doctype)
 }

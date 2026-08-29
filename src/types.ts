@@ -18,7 +18,12 @@ export type Openid4vpProtocol = Exclude<DcApiProtocol, 'org-iso-mdoc'>
 /**
  * The document types Apple allows in the
  * `com.apple.developer.identity-document-services.document-provider.mobile-document-types`
- * entitlement. Registering any other document type fails on iOS.
+ * entitlement.
+ *
+ * An app is entitled to the ones it lists there — the config plugin's `ios.documentTypes` — and
+ * registering a document type outside that list is rejected by the OS, so
+ * {@link registerCredentials} skips those credentials rather than sending them. This is the outer
+ * bound of what can be configured, not what any one build registers.
  */
 export const iosSupportedDocumentTypes = [
   'org.iso.18013.5.1.mDL',

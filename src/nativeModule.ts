@@ -28,6 +28,12 @@ declare class DigitalCredentialsApiModule extends NativeModule {
   addDocument(registration: IosDocumentRegistration): Promise<void>
   removeDocument(documentIdentifier: string): Promise<void>
 
+  /**
+   * iOS: the document types the app's `…mobile-document-types` entitlement lists, as the config
+   * plugin mirrored them into the Info.plist. `undefined` when the key is absent.
+   */
+  getEntitledDocumentTypes?(): string[] | null
+
   /** iOS: path of the app group container, in whichever process asks. */
   getSharedContainerPath(): string
 
