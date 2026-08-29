@@ -45,6 +45,11 @@ export const withAppEntitlements: ConfigPlugin<DigitalCredentialsApiPluginOption
 
   return withInfoPlist(withPlists, (config) => {
     config.modResults.ANIMO_DC_API_APP_GROUP = appGroup
+    // The entitlement itself is not readable from JS, and it is the entitlement — not Apple's full
+    // allowed set — that decides which document types can be registered. Mirroring it here lets
+    // `registerCredentials` skip what this build could never register. Only the app registers
+    // documents, so the extension's Info.plist does not need it.
+    config.modResults.ANIMO_DC_API_DOCUMENT_TYPES = documentTypes
     return config
   })
 }

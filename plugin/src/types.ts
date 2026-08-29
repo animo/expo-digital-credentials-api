@@ -17,7 +17,8 @@ export type DigitalCredentialsApiPluginOptions = {
     /**
      * The mobile document types the wallet can provide. These go into the
      * `com.apple.developer.identity-document-services.document-provider.mobile-document-types`
-     * entitlement; registering a document type that is not listed here fails at runtime.
+     * entitlement, which is what the OS matches registrations against: `registerCredentials` skips
+     * credentials whose document type is not listed here, and `registerCredential` throws for one.
      *
      * Required to build the provider extension.
      */

@@ -197,8 +197,10 @@ iOS can only register the following document types:
 - `eu.europa.ec.eudi.pid.1`
 - `eu.europa.ec.av.1`
 
-Everything else is filtered out before registration on iOS, so the same registration flow works on
-both platforms. See [Apple Documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.identity-document-services.document-provider.mobile-document-types) for more information.
+Your app is entitled to the ones you list in `ios.documentTypes`, and that list — not the full set
+above — is what registration filters on: a credential whose document type the app is not entitled to
+is rejected by the OS, so it is skipped before it gets there. Everything else is filtered out too, so
+the same registration flow works on both platforms. See [Apple Documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.identity-document-services.document-provider.mobile-document-types) for more information.
 
 ## Usage
 
@@ -269,8 +271,9 @@ async function syncRegisteredCredentials() {
 ```
 
 Credentials the platform cannot present are skipped rather than rejected, so you can pass the whole set
-on both platforms. On iOS only `mso_mdoc` credentials with a document type in Apple's [allowed
-set](#supported-document-types) register. The returned ids say which did.
+on both platforms. On iOS only `mso_mdoc` credentials with a document type the app is entitled to —
+the plugin's [`ios.documentTypes`](#supported-document-types) — register. The returned ids say which
+did.
 
 **On iOS the credentials never leave your app.** Only the identifier, document type and the `ios`
 gates are handed over, and nothing is kept. The registered ids are how you find your own credentials

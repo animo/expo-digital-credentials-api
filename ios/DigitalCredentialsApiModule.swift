@@ -81,6 +81,13 @@ public final class DigitalCredentialsApiModule: Module {
             try await Self.removeAllRegistrations(from: IdentityDocumentProviderRegistrationStore())
         }
 
+        /// The document types this build is entitled to register, from the Info.plist key the
+        /// config plugin mirrors the entitlement into. `nil` when the key is absent — a project
+        /// that set the entitlement by hand — where the caller falls back to Apple's full set.
+        Function("getEntitledDocumentTypes") { () -> [String]? in
+            Bundle.main.object(forInfoDictionaryKey: "ANIMO_DC_API_DOCUMENT_TYPES") as? [String]
+        }
+
         /// Path of the app group container, in whichever process asks — so the app and the request
         /// UI can open the same database. Nothing of this package's own lives there.
         Function("getSharedContainerPath") { () -> String in
