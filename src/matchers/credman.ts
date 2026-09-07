@@ -6,7 +6,10 @@ import { decodeBase64 } from '../util'
  * payload, the concatenated icon bytes, then the JSON itself with `{start, length}` slices into
  * that icon region.
  *
- * Both matchers only answer OpenID4VP requests.
+ * Both matchers only answer OpenID4VP requests, and neither separates what it shows from what it
+ * matches: Ubique draws `value` in the picker as well as comparing it, CMWallet shows only the
+ * name. So nothing here is rendered for a person — `display.claims[].displayValue` is a Multipaz
+ * override, and putting it in `value` would decide whether the credential matches at all.
  */
 export function encodeCredmanCredentials(credentials: DcApiCredential[], { debug }: { debug?: boolean }): Uint8Array {
   const chunks: Uint8Array[] = []
@@ -100,12 +103,12 @@ function sdJwtPaths(claims: SdJwtClaims, display: DcApiCredentialDisplay, path: 
   const result: EncodedSdJwtPaths = {}
 
   for (const [key, value] of Object.entries(claims)) {
-    if (value && !Array.isArray(value) && typeof value === 'object') {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
       result[key] = sdJwtPaths(value, display, [...path, key])
     } else {
       result[key] = {
         display: displayName(display, [...path, key]),
-        // Do not allow matching based on array claims for now
+        // An array claim is registered for its path alone, and matched on nothing.
         value: Array.isArray(value) ? undefined : value ?? undefined,
       }
     }

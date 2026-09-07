@@ -348,6 +348,13 @@ export interface RegisterCredentialOptions {
   credential: DcApiCredential
 }
 
+/**
+ * How the credential is drawn in the system credential picker.
+ *
+ * Android only. iOS has no system picker. What the user sees on iOS is the
+ * wallet's own request UI, drawn from {@link IosDcApiRequest.presentmentRequests}
+ * and the wallet's own storage.
+ */
 export interface DcApiCredentialDisplay {
   title: string
   subtitle?: string
@@ -365,24 +372,55 @@ export interface DcApiCredentialDisplay {
     path: string[]
 
     displayName?: string
+
+    /**
+     * What the picker shows as the claim's value, instead of the value itself.
+     *
+     * Only with the `multipaz` matcher: it is the one matcher that keeps the displayed value apart
+     * from the value it matches on. The others compare the value they show, so overriding it there
+     * would decide whether the credential matches.
+     *
+     * Nothing is formatted for you: without this the picker shows the value you registered, and
+     * nothing at all for a claim registered without one. Pass `''` to leave a claim's value out of
+     * the picker while keeping the value it matches on.
+     */
+    displayValue?: string
   }>
 }
+
+/**
+ * A claim value, in the shapes a matcher registry holds.
+ *
+ * Registered as it is: nothing here is formatted, and nothing is decoded for you. A credential
+ * carrying a date or a portrait passes whatever string it wants matched, or `null` to register the
+ * claim without a value at all. What the claim should read as in the picker is the wallet's
+ * decision, and {@link DcApiCredentialDisplay} `displayValue` is where it makes it.
+ */
+export type DcApiClaimValue = string | number | boolean | null
 
 export interface DcApiMdocCredential {
   format: 'mso_mdoc'
   doctype: string
 
   /**
-   * The namespaces of the credential. Pass `null` for nested / complex attribute values, since
-   * those cannot be matched on.
+   * The namespaces of the credential.
+   *
+   * Android only, where they become the claim database the matcher queries. iOS registers
+   * {@link doctype} alone and matches on that, so a verifier asking for an element surfaces every
+   * registered document of that type, including one that does not carry it — see
+   * {@link IosDcApiRequest.presentmentRequests}.
    */
-  namespaces: Record<string, Record<string, string | number | boolean | null>>
+  namespaces: Record<string, Record<string, DcApiClaimValue>>
 }
 
 export type SdJwtClaims = {
-  [key: string]: string | number | boolean | Array<SdJwtClaims> | SdJwtClaims
+  [key: string]: DcApiClaimValue | SdJwtClaims | Array<DcApiClaimValue | SdJwtClaims>
 }
 
+/**
+ * Android only: iOS registers `mso_mdoc` documents alone, and {@link registerCredentials} skips
+ * these there rather than rejecting them.
+ */
 export interface DcApiSdJwtCredential {
   format: 'dc+sd-jwt'
   vct: string
@@ -395,7 +433,14 @@ export interface DcApiSdJwtCredential {
 
 export interface DcApiCredential {
   id: string
+
+  /**
+   * How the credential is drawn in the system credential picker. Android only, and ignored on iOS —
+   * see {@link DcApiCredentialDisplay}. Still required everywhere, so one credential set can be
+   * passed to {@link registerCredentials} on both platforms.
+   */
   display: DcApiCredentialDisplay
+
   credential: DcApiMdocCredential | DcApiSdJwtCredential
 
   /**

@@ -61,6 +61,12 @@ const credentials: DcApiCredential[] = [
       claims: [
         { path: ['eu.europa.ec.eudi.pid.1', 'given_name'], displayName: 'First Name' },
         { path: ['eu.europa.ec.eudi.pid.1', 'resident_city'], displayName: 'Resident City' },
+        {
+          path: ['eu.europa.ec.eudi.pid.1', 'birth_date'],
+          displayName: 'Date of Birth',
+          displayValue: '1 January 1990',
+        },
+        { path: ['eu.europa.ec.eudi.pid.1', 'portrait'], displayName: 'Portrait' },
       ],
       iconDataUrl: icon,
     },
@@ -74,6 +80,9 @@ const credentials: DcApiCredential[] = [
           birth_date: '1990-01-01',
           age_over_18: true,
           resident_city: 'Somewhere',
+          // Nothing a request can compare, and nothing worth a picker line: registered for its
+          // path alone, so a request asking for it still matches.
+          portrait: null,
         },
       },
     },
