@@ -57,42 +57,67 @@ function encodeCredential({ id, display, credential }: DcApiCredential): CborVal
 /**
  * The matcher keys claims by their path joined with `.` — namespace and element for mdoc, the full
  * JSON path for SD-JWT.
+ *
+ * A nested object is registered as a claim of its own as well as flattened, so a request asking for
+ * `address` matches the same credential a request asking for `address.city` does, and the picker
+ * has something to show for it either way.
  */
 function sdJwtClaims(claims: SdJwtClaims, display: DcApiCredentialDisplay, path: string[]): CborValue {
   const result: CborValue = {}
 
   for (const [key, value] of Object.entries(claims)) {
     const claimPath = [...path, key]
+    result[claimPath.join('.')] = claim(display, claimPath, value)
 
-    if (value && !Array.isArray(value) && typeof value === 'object') {
+    if (isNestedObject(value)) {
       Object.assign(result, sdJwtClaims(value, display, claimPath))
-    } else {
-      result[claimPath.join('.')] = claim(display, claimPath, value)
     }
   }
 
   return result
 }
 
-function claim(
-  display: DcApiCredentialDisplay,
-  path: string[],
-  value: string | number | boolean | SdJwtClaims[] | null | undefined
-): CborValue {
-  const displayName = display.claims?.find((claim) => claim.path.join('.') === path.join('.'))?.displayName
-  const rendered = renderValue(value)
+/**
+ * One claim, as `[displayName, value, matchValue]`.
+ *
+ * The last two are the same string unless the wallet passes a `displayValue`: the matcher draws
+ * `value` in the picker and compares `matchValue` against the `values` of a DCQL claim, so a claim
+ * can be made to read well without changing what the credential matches. Long values — a portrait
+ * handed over as base64, say — are left out of matching, where a DCQL value never is that long.
+ */
+function claim(display: DcApiCredentialDisplay, path: string[], value: SdJwtClaims[string]): CborValue {
+  const claimDisplay = display.claims?.find((claim) => claim.path.join('.') === path.join('.'))
+  const registered = registeredValue(value)
 
-  // Value matching is on the raw value; the matcher itself skips long values (portraits and the
-  // like) so they never end up in a DCQL comparison.
-  return [displayName ?? (path[path.length - 1] as string), rendered, rendered.length < 128 ? rendered : '']
+  return [
+    claimDisplay?.displayName ?? (path[path.length - 1] as string),
+    claimDisplay?.displayValue ?? registered,
+    registered.length < 128 ? registered : '',
+  ]
 }
 
-function renderValue(value: string | number | boolean | SdJwtClaims[] | null | undefined): string {
-  if (value === null || value === undefined) return ''
+/**
+ * Every member of the database is a CBOR text string — the matcher reads all three with
+ * `asTstr()->value()` (`CredentialDatabase.cpp`) — so a value that is not one is written as one.
+ * The request side does the same before comparing, in `dcql.cpp`: a DCQL `values` member becomes
+ * `"true"`/`"false"` for a boolean and `std::to_string` for a number, so `true` and `"true"` are
+ * the same query to this matcher, and there is nothing to tell apart here either.
+ *
+ * The rest carries no value at all: `null`, and the objects and arrays a claim can hold, which
+ * match on their path.
+ */
+function registeredValue(value: SdJwtClaims[string]): string {
   if (typeof value === 'string') return value
-  if (Array.isArray(value)) return JSON.stringify(value)
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
 
-  return String(value)
+  return ''
+}
+
+/**
+ * Whether the value holds claims of its own, which are registered as claims in their own right.
+ */
+function isNestedObject(value: SdJwtClaims[string]): value is SdJwtClaims {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function decodeIcon(iconDataUrl: DcApiCredentialDisplay['iconDataUrl']): Uint8Array {

@@ -87,7 +87,7 @@ describe('multipaz matcher', () => {
     expect(encoded).toContain('eu.europa.ec.eudi.pid.1')
   })
 
-  test('drops long values from matching but keeps them for display', () => {
+  test('drops a value too long for a DCQL comparison', () => {
     const portrait = 'x'.repeat(200)
     const encoded = text(
       encodeMultipazCredentials(
@@ -101,9 +101,58 @@ describe('multipaz matcher', () => {
       )
     )
 
-    // display value present, match value emptied
-    expect(encoded).toContain(portrait)
-    expect(encoded.match(new RegExp(portrait, 'g'))).toHaveLength(1)
+    // A DCQL value is never 200 characters long, so only the copy the picker draws carries it.
+    expect(encoded.match(/x{200}/g)).toHaveLength(1)
+  })
+
+  test('shows a value without matching on it', () => {
+    const encoded = text(
+      encodeMultipazCredentials(
+        [
+          {
+            ...mdl,
+            display: {
+              ...mdl.display,
+              claims: [{ path: ['ns', 'birth_date'], displayName: 'Date of birth', displayValue: '1 januari 1990' }],
+            },
+            credential: {
+              format: 'mso_mdoc',
+              doctype: 'x',
+              namespaces: { ns: { birth_date: '1990-01-01' } },
+            },
+          },
+        ],
+        ['openid4vp']
+      )
+    )
+
+    // The wallet's own rendering is drawn, while the raw value stays what a DCQL `values` is
+    // compared against.
+    expect(encoded).toContain('1 januari 1990')
+    expect(encoded).toContain('1990-01-01')
+  })
+
+  test('registers a nested SD-JWT claim next to the claims it holds', () => {
+    const encoded = text(
+      encodeMultipazCredentials(
+        [
+          {
+            ...pid,
+            credential: {
+              format: 'dc+sd-jwt',
+              vct: 'eu.europa.ec.eudi.pid.1',
+              claims: { address: { city: 'Utrecht', street: 'Nieuwegracht' } },
+            },
+          },
+        ],
+        ['openid4vp']
+      )
+    )
+
+    // A request asking for `address` matches the same credential one asking for `address.city`
+    // does. The object itself has no value a query could carry, so it is registered without one.
+    expect(encoded).toContain('address.city')
+    expect(encoded).toContain('Utrecht')
   })
 
   test('parses the picker entry id', () => {

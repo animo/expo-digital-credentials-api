@@ -226,6 +226,7 @@ const credentials: DcApiCredential[] = [
     display: {
       title: "Drivers License",
       subtitle: "Issued by Utopia",
+      // displayValue overrides how the picker renders the value; see below.
       claims: [{ path: ["org.iso.18013.5.1", "family_name"], displayName: "Family Name" }],
       // Optional, and shown in the picker: iconDataUrl: "data:image/png;base64,…"
     },

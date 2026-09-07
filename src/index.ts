@@ -10,6 +10,7 @@ export {
 export { defaultMatcher, matcherProtocols } from './matchers'
 export type {
   AndroidDcApiRequest,
+  DcApiClaimValue,
   DcApiCredential,
   DcApiCredentialDisplay,
   DcApiMatcher,
