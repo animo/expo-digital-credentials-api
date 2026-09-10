@@ -4,6 +4,7 @@ import plist from '@expo/plist'
 import type { ExpoConfig } from 'expo/config'
 import { type ConfigPlugin, withDangerousMod } from 'expo/config-plugins'
 import { getBundleRoot } from '../entry'
+import { packageRoot } from '../packageRoot'
 import {
   type DigitalCredentialsApiPluginOptions,
   extensionTargetName,
@@ -35,7 +36,7 @@ export const withExtensionFiles: ConfigPlugin<DigitalCredentialsApiPluginOptions
 
       fs.mkdirSync(targetDirectory, { recursive: true })
 
-      const packageIosDirectory = path.join(__dirname, '..', '..', '..', 'ios')
+      const packageIosDirectory = path.join(packageRoot, 'ios')
       // `{{BUNDLE_ROOT}}` is what the extension asks Metro for in debug builds.
       const substitutions = {
         '{{BUNDLE_ROOT}}': getBundleRoot(config.modRequest.projectRoot, options),
@@ -59,7 +60,7 @@ export const withExtensionFiles: ConfigPlugin<DigitalCredentialsApiPluginOptions
       // The extension reads both of these from its own Info.plist: the app group it shares with the
       // app, and the fonts it registers out of the app's bundle at launch.
       const infoPlistPath = path.join(targetDirectory, 'Info.plist')
-      const { ANIMO_DC_API_FONTS: _fonts, ...parsed } = plist.parse(fs.readFileSync(infoPlistPath, 'utf8')) as Record<
+      const { EXPO_DC_API_FONTS: _fonts, ...parsed } = plist.parse(fs.readFileSync(infoPlistPath, 'utf8')) as Record<
         string,
         unknown
       >
@@ -67,10 +68,10 @@ export const withExtensionFiles: ConfigPlugin<DigitalCredentialsApiPluginOptions
       const fonts = options.ios?.fonts ?? []
       const infoPlist = {
         ...parsed,
-        ANIMO_DC_API_APP_GROUP: getAppGroup(bundleIdentifier, options),
+        EXPO_DC_API_APP_GROUP: getAppGroup(bundleIdentifier, options),
         // Dropped rather than emptied when nothing is configured, so the extension can tell "no
         // fonts wanted" from "fonts wanted and none found".
-        ...(fonts.length > 0 ? { ANIMO_DC_API_FONTS: fonts } : {}),
+        ...(fonts.length > 0 ? { EXPO_DC_API_FONTS: fonts } : {}),
         // The app's `userInterfaceStyle` reaches its own Info.plist only, and the extension is a
         // separate bundle: an app pinned to light would otherwise get a request UI that follows the
         // device, down to the sheet's own title bar turning dark around a light screen.

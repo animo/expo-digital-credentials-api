@@ -29,8 +29,27 @@ class DigitalCredentialsApiActivity : AppCompatActivity(), DefaultHardwareBackBt
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        DigitalCredentialsApiSingleton.currentRequestActivity = this
         android.util.Log.d("DigitalCredentialsApi", "request activity started by action '${intent.action}'")
+
+        // Read before anything else is set up: a request that cannot be read — an origin that
+        // cannot be verified, a malformed payload — is answered with an error rather than crashing
+        // the activity, which would leave the verifier without any answer at all.
+        val request =
+                try {
+                    DigitalCredentialsApiSingleton.getRequest(this, intent)
+                } catch (error: Exception) {
+                    android.util.Log.e("DigitalCredentialsApi", "could not read the credential request", error)
+                    setResult(
+                            RESULT_OK,
+                            DigitalCredentialsApiSingleton.getErrorResponseIntent(
+                                    error.message ?: "The credential request could not be read"
+                            )
+                    )
+                    finish()
+                    return
+                }
+
+        DigitalCredentialsApiSingleton.currentRequestActivity = this
 
         // Edge-to-edge: the component renders as a sheet over the requesting app.
         window.apply {
@@ -52,7 +71,7 @@ class DigitalCredentialsApiActivity : AppCompatActivity(), DefaultHardwareBackBt
                         this,
                         DcApiReactHost.get(application),
                         DC_API_COMPONENT_NAME,
-                        launchOptions()
+                        Bundle().apply { putString("request", request) }
                 )
         reactDelegate.loadApp()
         // `ReactDelegate` starts the surface but never attaches it — `ReactActivityDelegate` is what
@@ -86,7 +105,10 @@ class DigitalCredentialsApiActivity : AppCompatActivity(), DefaultHardwareBackBt
         if (DigitalCredentialsApiSingleton.currentRequestActivity === this) {
             DigitalCredentialsApiSingleton.currentRequestActivity = null
         }
-        reactDelegate.onHostDestroy()
+        // Not initialized when `onCreate` finished early, which goes straight to `onDestroy`.
+        if (::reactDelegate.isInitialized) {
+            reactDelegate.onHostDestroy()
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -134,11 +156,6 @@ class DigitalCredentialsApiActivity : AppCompatActivity(), DefaultHardwareBackBt
 
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean =
             reactDelegate.onKeyLongPress(keyCode) || super.onKeyLongPress(keyCode, event)
-
-    private fun launchOptions() =
-            Bundle().apply {
-                putString("request", DigitalCredentialsApiSingleton.getRequest(this@DigitalCredentialsApiActivity, intent))
-            }
 
     private companion object {
         /** Must match `registerDcApiScreen` on the JS side. */

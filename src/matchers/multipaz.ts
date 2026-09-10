@@ -1,6 +1,7 @@
 import type { DcApiCredential, DcApiCredentialDisplay, DcApiProtocol, SdJwtClaims } from '../types'
 import { decodeBase64 } from '../util'
 import { type CborValue, encodeCbor } from './cbor'
+import type { ParsedSelection } from './index'
 
 /**
  * The credential database the Multipaz matcher reads (`CredentialDatabase.cpp`):
@@ -12,14 +13,18 @@ import { type CborValue, encodeCbor } from './cbor'
  *     "title": tstr, "subtitle": tstr, "bitmap": bstr,
  *     "protocols": [tstr],                                  ; optional, overrides the top level
  *     "mdoc":  { "documentId": tstr, "docType": tstr,
+ *                "issuerIdentifiers": [bstr], "readerIdentifiers": [bstr],   ; optional
  *                "namespaces": { ns: { element: [display, value, matchValue] } } },
  *     "sdjwt": { "documentId": tstr, "vct": tstr,
+ *                "issuerIdentifiers": [bstr], "readerIdentifiers": [bstr],   ; optional
  *                "claims": { "a.b.c": [display, value, matchValue] } }
  *   }]
  * }
  * ```
  *
- * `title`, `subtitle` and `bitmap` are read unconditionally, so they are always written.
+ * `title`, `subtitle` and `bitmap` are read unconditionally, so they are always written. The
+ * identifiers are only written when there are any, which is also what tells the matcher a credential
+ * is not gated on its reader.
  */
 export function encodeMultipazCredentials(credentials: DcApiCredential[], protocols: DcApiProtocol[]): Uint8Array {
   return encodeCbor({
@@ -28,11 +33,23 @@ export function encodeMultipazCredentials(credentials: DcApiCredential[], protoc
   })
 }
 
-function encodeCredential({ id, display, credential }: DcApiCredential): CborValue {
+function encodeCredential({ id, display, credential, android }: DcApiCredential): CborValue {
   const common = {
     title: display.title,
     subtitle: display.subtitle ?? '',
     bitmap: decodeIcon(display.iconDataUrl),
+  }
+
+  const identifiers: CborValue = {}
+  if (android?.issuerAuthorityKeyIdentifiers?.length) {
+    identifiers.issuerIdentifiers = android.issuerAuthorityKeyIdentifiers.map((value) =>
+      decodeIdentifier(value, 'issuerAuthorityKeyIdentifiers', id)
+    )
+  }
+  if (android?.supportedAuthorityKeyIdentifiers?.length) {
+    identifiers.readerIdentifiers = android.supportedAuthorityKeyIdentifiers.map((value) =>
+      decodeIdentifier(value, 'supportedAuthorityKeyIdentifiers', id)
+    )
   }
 
   if (credential.format === 'mso_mdoc') {
@@ -45,12 +62,17 @@ function encodeCredential({ id, display, credential }: DcApiCredential): CborVal
       namespaces[namespace] = encoded
     }
 
-    return { ...common, mdoc: { documentId: id, docType: credential.doctype, namespaces } }
+    return { ...common, mdoc: { documentId: id, docType: credential.doctype, ...identifiers, namespaces } }
   }
 
   return {
     ...common,
-    sdjwt: { documentId: id, vct: credential.vct, claims: sdJwtClaims(credential.claims, display, []) },
+    sdjwt: {
+      documentId: id,
+      vct: credential.vct,
+      ...identifiers,
+      claims: sdJwtClaims(credential.claims, display, []),
+    },
   }
 }
 
@@ -120,6 +142,18 @@ function isNestedObject(value: SdJwtClaims[string]): value is SdJwtClaims {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+/**
+ * Base64, as iOS takes the same identifiers. A base64url value copied from a `trusted_authorities`
+ * entry is refused rather than guessed at.
+ */
+function decodeIdentifier(value: string, option: string, credentialId: string): Uint8Array {
+  try {
+    return decodeBase64(value)
+  } catch {
+    throw new TypeError(`'android.${option}' holds '${value}', which is not base64, for credential '${credentialId}'`)
+  }
+}
+
 function decodeIcon(iconDataUrl: DcApiCredentialDisplay['iconDataUrl']): Uint8Array {
   if (!iconDataUrl) return new Uint8Array(0)
 
@@ -127,19 +161,32 @@ function decodeIcon(iconDataUrl: DcApiCredentialDisplay['iconDataUrl']): Uint8Ar
 }
 
 /**
- * The matcher builds picker entry ids as `<combination> <protocol> <documentId>`
- * (`Combination::addToCredmanPicker`). Document ids can contain spaces, the first two fields cannot.
+ * The matcher builds one picker entry per credential in a combination, with ids of the form
+ * `<combination> <protocol> <documentId>` (`Combination::addToCredmanPicker`), so a picked set
+ * arrives as one id per slot. Document ids can contain spaces, the first two fields cannot.
+ *
+ * The entries name a protocol, not a request. The matcher walks the requests in order, adds the
+ * combinations of the first one the registered credentials can satisfy and stops (`matcher.cpp`),
+ * but it only hands the protocol on: the set id is `<combination> <protocol>` and the entry metadata
+ * is left empty. So every request with that protocol is a candidate. Of those, the one the matcher
+ * answered is the first the picked credentials satisfy, since the ones before it were not
+ * satisfiable at all.
  */
-export function parseMultipazEntryId(entryId: string, protocols: DcApiProtocol[]) {
-  const [, protocol, ...rest] = entryId.split(' ')
-  if (!protocol || rest.length === 0) {
-    throw new Error(`Unexpected selected entry id '${entryId}' for the multipaz matcher`)
-  }
+export function parseMultipazSelection(entryIds: string[], protocols: string[]): ParsedSelection {
+  const entries = entryIds.map((entryId) => {
+    const [, protocol, ...rest] = entryId.split(' ')
+    if (!protocol || rest.length === 0) {
+      throw new Error(`Unexpected selected entry id '${entryId}' for the multipaz matcher`)
+    }
+
+    return { protocol, credentialId: rest.join(' ') }
+  })
+
+  // The entries of a set all come from one combination, so they name the same protocol.
+  const protocol = entries[0]?.protocol
 
   return {
-    credentialId: rest.join(' '),
-    // The entry names the protocol it matched, not its position, so map it back onto the request.
-    // `-1` when the matcher answers with a protocol the request does not contain.
-    requestIndex: protocols.findIndex((requested) => requested === protocol),
+    credentialIds: entries.map((entry) => entry.credentialId),
+    requestIndexes: protocols.flatMap((requested, index) => (requested === protocol ? [index] : [])),
   }
 }

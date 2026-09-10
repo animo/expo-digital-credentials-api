@@ -7,9 +7,12 @@ export {
   removeAllCredentials,
   removeCredential,
 } from './api'
+export { iosSupportedDocumentTypes, type IosSupportedDocumentType } from './iosDocumentTypes'
 export { defaultMatcher, matcherProtocols } from './matchers'
 export type {
   AndroidDcApiRequest,
+  AndroidDcApiSelection,
+  AndroidRegistrationOptions,
   DcApiClaimValue,
   DcApiCredential,
   DcApiCredentialDisplay,
@@ -27,7 +30,6 @@ export type {
   IosReaderAuthentication,
   IosRequestedElement,
   IosRegistrationOptions,
-  IosSupportedDocumentType,
   IsoMdocProtocolRequest,
   IsoMdocResponseOptions,
   Openid4vpProtocol,
@@ -38,5 +40,5 @@ export type {
   RegistrationStatus,
   SdJwtClaims,
 } from './types'
-export { dcApiProtocols, iosSupportedDocumentTypes } from './types'
+export { dcApiProtocols } from './types'
 export { DcApiUnsupportedError } from './util'

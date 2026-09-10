@@ -9,6 +9,7 @@ import androidx.credentials.GetCredentialResponse
 import androidx.credentials.GetDigitalCredentialOption
 import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.provider.PendingIntentHandler
+import androidx.credentials.registry.provider.ClearCredentialRegistryException
 import androidx.credentials.registry.provider.ClearCredentialRegistryRequest
 import androidx.credentials.registry.provider.RegisterCredentialsRequest
 import androidx.credentials.registry.provider.RegistryManager
@@ -18,6 +19,7 @@ import expo.modules.core.interfaces.SingletonModule
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 
 /** The wasm matchers bundled with this package. Which one is registered is a wallet's choice. */
 enum class Matcher(val identifier: String, val asset: String) {
@@ -27,6 +29,9 @@ enum class Matcher(val identifier: String, val asset: String) {
      * (`multipaz-dcapi/src/androidMain/assets/identitycredentialmatcher.wasm`, Apache-2.0).
      *
      * The only bundled matcher that answers `org-iso-mdoc` requests, and the default.
+     *
+     * Current version:
+     * https://github.com/openwallet-foundation/multipaz/blob/1b045d0e/multipaz-dcapi/src/androidMain/assets/identitycredentialmatcher.wasm
      */
     MULTIPAZ("multipaz", "multipaz-matcher.wasm"),
 
@@ -71,17 +76,29 @@ object DigitalCredentialsApiSingleton : SingletonModule {
      */
     private const val REGISTRY_ID = "dc-api"
 
+    /** The id versions before this one registered under. */
+    private const val LEGACY_REGISTRY_ID = "openid4vp"
+
     /** Chrome still looks for the legacy type, so the registry is written under both. */
     private val REGISTRY_TYPES =
             listOf("com.credman.IdentityCredential", DigitalCredential.TYPE_DIGITAL_CREDENTIAL)
+
+    private var currentRequestActivityReference: WeakReference<DigitalCredentialsApiActivity>? = null
 
     /**
      * The activity showing the request UI, if any. Only one request is in flight at a time, and the
      * request UI runs on its own react host — so rather than going through the activity provider of
      * whichever host happens to answer, the activity publishes itself here. Mirrors
      * `DcApiRequestSessionStore` on iOS.
+     *
+     * Held weakly: the activity clears it in `onDestroy`, but a destroyed activity must not outlive
+     * itself here if that is ever skipped.
      */
-    var currentRequestActivity: DigitalCredentialsApiActivity? = null
+    var currentRequestActivity: DigitalCredentialsApiActivity?
+        get() = currentRequestActivityReference?.get()
+        set(value) {
+            currentRequestActivityReference = value?.let { WeakReference(it) }
+        }
 
     suspend fun registerCredentials(context: Context, credentialBytes: ByteArray, matcher: Matcher) {
         Log.i(TAG, "registering ${credentialBytes.size} bytes with the ${matcher.identifier} matcher")
@@ -96,10 +113,9 @@ object DigitalCredentialsApiSingleton : SingletonModule {
         val registryManager = RegistryManager.create(context)
         val matcherBytes = loadMatcher(context, matcher)
 
-        // Registries written by earlier versions used a different id, and would otherwise stay live
-        // alongside this one — showing every credential twice in the picker.
-        clearRegistries(registryManager)
-
+        // Registering under an id that is already registered replaces it, so the new set goes in
+        // before anything is cleared: a registration that fails leaves the previous set in place
+        // rather than none at all.
         for (type in REGISTRY_TYPES) {
             registryManager.registerCredentials(
                     request =
@@ -112,19 +128,34 @@ object DigitalCredentialsApiSingleton : SingletonModule {
                                     ) {}
             )
         }
+
+        // Registries written by earlier versions used a different id, and would otherwise stay live
+        // alongside this one — showing every credential twice in the picker. Best effort: the new
+        // set is already in place, so a failure here only leaves a stale duplicate behind.
+        try {
+            clearRegistries(registryManager, isDeleteAll = false, registryIds = listOf(LEGACY_REGISTRY_ID))
+        } catch (error: ClearCredentialRegistryException) {
+            Log.w(TAG, "could not clear the registry an earlier version wrote", error)
+        }
     }
 
-    /** Drop everything this package registered, without touching registries of other types. */
+    /**
+     * Drop registries of the types this package writes. With `isDeleteAll` that is every registry
+     * of those types the app holds — including any the app wrote through `RegistryManager` itself —
+     * otherwise only the given ids.
+     */
     suspend fun clearRegistries(
-            registryManager: RegistryManager
+            registryManager: RegistryManager,
+            isDeleteAll: Boolean = true,
+            registryIds: List<String> = emptyList()
     ) {
         for (type in REGISTRY_TYPES) {
             registryManager.clearCredentialRegistry(
                     ClearCredentialRegistryRequest(
                             ClearCredentialRegistryRequest.PerTypeConfig(
-                                    isDeleteAll = true,
+                                    isDeleteAll = isDeleteAll,
                                     type = type,
-                                    registryIds = emptyList()
+                                    registryIds = registryIds
                             )
                     )
             )
@@ -204,7 +235,7 @@ object DigitalCredentialsApiSingleton : SingletonModule {
                 // Explicitly null rather than omitted: `JSONObject.put` drops a key whose value is
                 // null, and the request UI should see that nothing was picked rather than a missing
                 // field.
-                .put("selectedEntryId", selectedEntryId(request) ?: JSONObject.NULL)
+                .put("selectedEntryIds", selectedEntryIds(request)?.let { JSONArray(it) } ?: JSONObject.NULL)
                 .put("requests", JSONArray(protocolRequests(intent)))
                 .toString()
     }
@@ -214,25 +245,23 @@ object DigitalCredentialsApiSingleton : SingletonModule {
      *
      * There are two shapes, and they are mutually exclusive: a single credential in
      * `extra.CREDENTIAL_ID`, or a *set* in `extra.CREDENTIAL_SET_*`. Which one arrives depends on
-     * what was registered — the multipaz matcher builds its entries out of combinations, so its
-     * picks come back as sets and `selectedEntryId` alone is null even though the user did choose.
+     * what the matcher registered. The multipaz matcher builds sets whenever the runtime supports
+     * them, so even a single credential comes back as a set of one, and `selectedEntryId` alone is
+     * null even though the user did choose.
      *
-     * Only the first credential of a set is reported: the request UI models one pick. A set with
-     * several is logged rather than silently truncated.
+     * A set carries one credential per slot the matcher declared, in slot order: a request the user
+     * answered with two credentials comes back as two entry ids. Null when nothing was picked.
      */
-    private fun selectedEntryId(request: androidx.credentials.provider.ProviderGetCredentialRequest): String? {
+    private fun selectedEntryIds(request: androidx.credentials.provider.ProviderGetCredentialRequest): List<String>? {
         request.selectedEntryId?.let {
             Log.d(TAG, "picked a single credential entry")
-            return it
+            return listOf(it)
         }
 
         val credentials = request.selectedCredentialSet?.credentials.orEmpty()
         Log.d(TAG, "no single entry; credential set has ${credentials.size} credential(s)")
-        if (credentials.size > 1) {
-            Log.w(TAG, "Selected credential set has ${credentials.size} credentials, using the first")
-        }
 
-        return credentials.firstOrNull()?.credentialId
+        return credentials.map { it.credentialId }.ifEmpty { null }
     }
 
     private fun providerRequest(intent: Intent) =

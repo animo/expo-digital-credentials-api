@@ -111,6 +111,13 @@ describe('registerCredentials on ios', () => {
     ])
   })
 
+  test('rejects two credentials with the same id, which the picked one could not be told apart by', async () => {
+    await expect(registerCredentials({ credentials: [mdl, { ...photoId, id: mdl.id }] })).rejects.toThrow(
+      "'mdl-1' is used more than once"
+    )
+    expect(mockNativeModule.registerDocuments).not.toHaveBeenCalled()
+  })
+
   test('rejects an unusable date instead of registering nothing', async () => {
     await expect(
       registerCredentials({ credentials: [{ ...mdl, ios: { invalidationDate: new Date('not a date') } }] })

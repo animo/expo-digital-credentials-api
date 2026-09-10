@@ -1,5 +1,6 @@
 import type { DcApiCredential, DcApiCredentialDisplay, SdJwtClaims } from '../types'
 import { decodeBase64 } from '../util'
+import type { ParsedSelection } from './index'
 
 /**
  * The credential blob the CMWallet and Ubique matchers read: a little-endian offset to the JSON
@@ -87,16 +88,26 @@ export function encodeCredmanCredentials(credentials: DcApiCredential[], { debug
 }
 
 /**
- * Both matchers report the picked entry as JSON: the index of the protocol request it matched, plus
+ * Both matchers report a picked entry as JSON: the index of the protocol request it matched, plus
  * the credential id.
+ *
+ * The bundled builds only register single entries, so exactly one arrives, and the request it names
+ * is exact.
  */
-export function parseCredmanEntryId(entryId: string) {
-  const selected = JSON.parse(entryId) as { provider_idx?: number; id?: string }
-  if (typeof selected.id !== 'string') {
-    throw new Error(`Unexpected selected entry id '${entryId}' for the cmwallet/ubique matcher`)
-  }
+export function parseCredmanSelection(entryIds: string[]): ParsedSelection {
+  const entries = entryIds.map((entryId) => {
+    const selected = JSON.parse(entryId) as { provider_idx?: number; id?: string }
+    if (typeof selected.id !== 'string') {
+      throw new Error(`Unexpected selected entry id '${entryId}' for the cmwallet/ubique matcher`)
+    }
 
-  return { credentialId: selected.id, requestIndex: selected.provider_idx ?? 0 }
+    return { credentialId: selected.id, requestIndex: selected.provider_idx ?? 0 }
+  })
+
+  return {
+    credentialIds: entries.map((entry) => entry.credentialId),
+    requestIndexes: [...new Set(entries.map((entry) => entry.requestIndex))],
+  }
 }
 
 function sdJwtPaths(claims: SdJwtClaims, display: DcApiCredentialDisplay, path: string[]): EncodedSdJwtPaths {

@@ -6,6 +6,7 @@ import { allExtensionFiles, getExtensionEntitlementsPath } from './withExtension
 import { assertExtensionFonts } from './withExtensionFonts'
 
 const defaultDeploymentTarget = '26.0'
+const bundleJsPhaseName = 'Bundle Extension JS'
 
 /**
  * Creates the ExtensionKit "Identity Document Provider" target, embeds it in the app, and adds the
@@ -13,78 +14,115 @@ const defaultDeploymentTarget = '26.0'
  */
 export const withExtensionTarget: ConfigPlugin<DigitalCredentialsApiPluginOptions> = (config, options) =>
   withXcodeProject(config, (config) => {
-    // biome-ignore lint/suspicious/noExplicitAny: the `xcode` package ships no useful types
-    const project = config.modResults as any
-    const appBundleIdentifier = config.ios?.bundleIdentifier as string
-    const deploymentTarget = options.ios?.deploymentTarget ?? defaultDeploymentTarget
-
-    // A prebuild over an existing `ios/` keeps the target, but the vendored file list can have grown
-    // since it was created — `withExtensionFiles` copies the new file in either way, and one that is
-    // never added to the target is silently not compiled.
-    if (project.pbxTargetByName(extensionTargetName)) {
-      addMissingExtensionFiles(project, extensionTargetName)
-      assertExtensionFonts(project, config.modRequest.projectName as string, options.ios?.fonts)
-      return config
-    }
-
-    const target = project.addTarget(
-      extensionTargetName,
-      'app_extension',
-      extensionTargetName,
-      getExtensionBundleIdentifier(appBundleIdentifier, options)
-    )
-
-    // `xcode` only knows the classic app-extension product type; ExtensionKit extensions are a
-    // different product type and wrapper, and the OS will not load the appex otherwise.
-    project.pbxNativeTargetSection()[target.uuid].productType = '"com.apple.product-type.extensionkit-extension"'
-    const productReference = project.pbxFileReferenceSection()[target.pbxNativeTarget.productReference]
-    if (productReference) {
-      productReference.explicitFileType = '"wrapper.extensionkit-extension"'
-    }
-
-    removePlugInsEmbedPhase(project, target)
-
-    project.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', target.uuid)
-    project.addBuildPhase([], 'PBXResourcesBuildPhase', 'Resources', target.uuid)
-    project.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', target.uuid)
-
-    // Files are added explicitly below; passing them here as well leaves orphaned PBXBuildFile
-    // entries that CocoaPods then discards with a warning.
-    const group = project.addPbxGroup([], extensionTargetName, extensionTargetName)
-    const groups = project.hash.project.objects.PBXGroup
-    for (const key of Object.keys(groups)) {
-      if (groups[key].name === undefined && groups[key].path === undefined) {
-        project.addToPbxGroup(group.uuid, key)
-      }
-    }
-
-    // Paths are relative to the group, which itself has `path = DocumentProvider`.
-    for (const file of allExtensionFiles) {
-      if (file.endsWith('.swift')) {
-        project.addSourceFile(file, { target: target.uuid }, group.uuid)
-      } else {
-        project.addFile(file, group.uuid)
-      }
-    }
-
-    setExtensionBuildSettings(project, {
-      target: extensionTargetName,
-      appBundleIdentifier,
-      deploymentTarget,
+    applyExtensionTarget(config.modResults, {
+      appBundleIdentifier: config.ios?.bundleIdentifier as string,
+      appTargetName: config.modRequest.projectName as string,
+      projectRoot: config.modRequest.projectRoot,
       options,
-      // Pods shared with the app (Expo, React) can only be built for one Swift language version,
-      // so the extension has to use whatever the app uses.
-      swiftVersion: getAppSwiftVersion(project, config.modRequest.projectName as string) ?? '5.0',
     })
-
-    addEmbedExtensionPhase(project, config.modRequest.projectName as string, target)
-    addBundleJsPhase(project, target, resolveEntryFile(config.modRequest.projectRoot, options, 'ios'))
-    weaklyLinkIdentityDocumentServices(project, config.modRequest.projectName as string)
-    // Last: the app's fonts are only all in the project once every plugin that adds one has run.
-    assertExtensionFonts(project, config.modRequest.projectName as string, options.ios?.fonts)
 
     return config
   })
+
+/**
+ * The part of {@link withExtensionTarget} that edits the project, run on every prebuild — the first
+ * one creates the target, later ones bring it up to date.
+ */
+export function applyExtensionTarget(
+  // biome-ignore lint/suspicious/noExplicitAny: the `xcode` package ships no useful types
+  project: any,
+  {
+    appBundleIdentifier,
+    appTargetName,
+    projectRoot,
+    options,
+  }: {
+    appBundleIdentifier: string
+    appTargetName: string
+    projectRoot: string
+    options: DigitalCredentialsApiPluginOptions
+  }
+) {
+  const entryFile = resolveEntryFile(projectRoot, options, 'ios')
+  const buildSettings = {
+    target: extensionTargetName,
+    appBundleIdentifier,
+    deploymentTarget: options.ios?.deploymentTarget ?? defaultDeploymentTarget,
+    options,
+    // Pods shared with the app (Expo, React) can only be built for one Swift language version,
+    // so the extension has to use whatever the app uses.
+    swiftVersion: getAppSwiftVersion(project, appTargetName) ?? '5.0',
+  }
+
+  // A prebuild over an existing `ios/` keeps the target, so everything derived from the options is
+  // applied again rather than left as the first prebuild wrote it. The vendored file list can have
+  // grown too — `withExtensionFiles` copies the new file in either way, and one that is never added
+  // to the target is silently not compiled.
+  //
+  // Found by key rather than with `pbxTargetByName`, which matches the target's comment: `addTarget`
+  // writes that quoted, so the lookup never finds the target it created and every prebuild would
+  // add another.
+  if (findTargetUuid(project, extensionTargetName)) {
+    addMissingExtensionFiles(project, extensionTargetName)
+    setExtensionBuildSettings(project, buildSettings)
+    setBundleJsEntryFile(project, entryFile)
+    assertExtensionFonts(project, appTargetName, options.ios?.fonts)
+    return
+  }
+
+  const target = project.addTarget(
+    extensionTargetName,
+    'app_extension',
+    extensionTargetName,
+    getExtensionBundleIdentifier(appBundleIdentifier, options)
+  )
+
+  // `xcode` only knows the classic app-extension product type; ExtensionKit extensions are a
+  // different product type and wrapper, and the OS will not load the appex otherwise.
+  project.pbxNativeTargetSection()[target.uuid].productType = '"com.apple.product-type.extensionkit-extension"'
+  const productReference = project.pbxFileReferenceSection()[target.pbxNativeTarget.productReference]
+  if (productReference) {
+    productReference.explicitFileType = '"wrapper.extensionkit-extension"'
+  }
+
+  removePlugInsEmbedPhase(project, target)
+
+  project.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', target.uuid)
+  project.addBuildPhase([], 'PBXResourcesBuildPhase', 'Resources', target.uuid)
+  project.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', target.uuid)
+
+  // Files are added explicitly below; passing them here as well leaves orphaned PBXBuildFile
+  // entries that CocoaPods then discards with a warning.
+  const group = project.addPbxGroup([], extensionTargetName, extensionTargetName)
+  const groups = project.hash.project.objects.PBXGroup
+  for (const key of Object.keys(groups)) {
+    if (groups[key].name === undefined && groups[key].path === undefined) {
+      project.addToPbxGroup(group.uuid, key)
+    }
+  }
+
+  // Paths are relative to the group, which itself has `path = DocumentProvider`.
+  for (const file of allExtensionFiles) {
+    if (file.endsWith('.swift')) {
+      project.addSourceFile(file, { target: target.uuid }, group.uuid)
+    } else {
+      project.addFile(file, group.uuid)
+    }
+  }
+
+  setExtensionBuildSettings(project, buildSettings)
+
+  addEmbedExtensionPhase(project, appTargetName, target)
+  addBundleJsPhase(project, target, entryFile)
+  weaklyLinkIdentityDocumentServices(project, appTargetName)
+  // Last: the app's fonts are only all in the project once every plugin that adds one has run.
+  assertExtensionFonts(project, appTargetName, options.ios?.fonts)
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: untyped `xcode` project
+function findTargetUuid(project: any, targetName: string): string | undefined {
+  return project.findTargetKey(targetName) ?? project.findTargetKey(`"${targetName}"`) ?? undefined
+}
 
 /**
  * Adds the vendored files the target does not have yet, leaving everything else alone.
@@ -95,7 +133,7 @@ export const withExtensionTarget: ConfigPlugin<DigitalCredentialsApiPluginOption
  */
 // biome-ignore lint/suspicious/noExplicitAny: untyped `xcode` project
 function addMissingExtensionFiles(project: any, targetName: string) {
-  const targetUuid = project.findTargetKey(targetName) ?? project.findTargetKey(`"${targetName}"`)
+  const targetUuid = findTargetUuid(project, targetName)
 
   // Identified by its path: the CocoaPods-generated `ExpoModulesProviders/DocumentProvider` group
   // carries the same name, and adding sources to that one would build nothing.
@@ -190,6 +228,10 @@ function getAppSwiftVersion(project: any, appTargetName: string): string | undef
  * `addTarget` embeds every `app_extension` product in the app's PlugIns folder. ExtensionKit
  * extensions go to Extensions/ instead (see `addEmbedExtensionPhase`), and installd refuses to
  * install an app carrying the same appex identifier in both places (`DuplicateIdentifier`).
+ *
+ * Only this extension's own build file is taken out: `addTarget` adds it to the first PlugIns phase
+ * it finds, which can be one another plugin's extension is embedded through. The phase itself goes
+ * only once nothing is left in it.
  */
 // biome-ignore lint/suspicious/noExplicitAny: untyped `xcode` project
 function removePlugInsEmbedPhase(project: any, target: any) {
@@ -202,12 +244,16 @@ function removePlugInsEmbedPhase(project: any, target: any) {
     if (typeof phase !== 'object' || phase.dstSubfolderSpec !== 13) continue
 
     const files: Array<{ value: string }> = phase.files ?? []
-    if (!files.some(({ value }) => buildFiles[value]?.fileRef === productReference)) continue
+    const ours = files.filter(({ value }) => buildFiles[value]?.fileRef === productReference)
+    if (ours.length === 0) continue
 
-    for (const { value } of files) {
+    for (const { value } of ours) {
       delete buildFiles[value]
       delete buildFiles[`${value}_comment`]
     }
+
+    phase.files = files.filter((file) => !ours.includes(file))
+    if (phase.files.length > 0) continue
 
     delete copyFilesPhases[phaseUuid]
     delete copyFilesPhases[`${phaseUuid}_comment`]
@@ -263,7 +309,7 @@ function addEmbedExtensionPhase(project: any, appTargetName: string, target: any
  */
 // biome-ignore lint/suspicious/noExplicitAny: untyped `xcode` project
 function addBundleJsPhase(project: any, target: any, entryFile: string) {
-  project.addBuildPhase([], 'PBXShellScriptBuildPhase', 'Bundle Extension JS', target.uuid, {
+  project.addBuildPhase([], 'PBXShellScriptBuildPhase', bundleJsPhaseName, target.uuid, {
     shellPath: '/bin/sh',
     shellScript: `if [[ -f "$PODS_ROOT/../.xcode.env" ]]; then source "$PODS_ROOT/../.xcode.env"; fi
 if [[ -f "$PODS_ROOT/../.xcode.env.local" ]]; then source "$PODS_ROOT/../.xcode.env.local"; fi
@@ -281,6 +327,28 @@ fi
 
 \`"$NODE_BINARY" --print "require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'"\``,
   })
+}
+
+/**
+ * Points the existing {@link addBundleJsPhase} phase at the current entry file, which the `entry`
+ * option or a new platform variant (`index.ios.tsx`) can have changed since it was written.
+ *
+ * The script is stored quoted, with its own quotes escaped — `ENTRY_FILE=\"dc-api/index.tsx\"` —
+ * both when `xcode` has just written it and when it is read back from disk.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: untyped `xcode` project
+function setBundleJsEntryFile(project: any, entryFile: string) {
+  const phases = project.hash.project.objects.PBXShellScriptBuildPhase ?? {}
+
+  for (const key of Object.keys(phases)) {
+    const phase = phases[key]
+    if (typeof phase !== 'object' || unquote(phase.name) !== bundleJsPhaseName) continue
+
+    phase.shellScript = String(phase.shellScript).replace(
+      /ENTRY_FILE=\\"[^"\\]*\\"/,
+      () => `ENTRY_FILE=\\"${entryFile}\\"`
+    )
+  }
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: untyped `xcode` project

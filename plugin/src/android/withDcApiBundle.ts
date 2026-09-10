@@ -37,26 +37,61 @@ export const withAndroidDcApiBundle: ConfigPlugin<DigitalCredentialsApiPluginOpt
 
 function bundleTask(entryFile: string) {
   return `// The credential request UI has its own entry point and its own react host, so it needs its own
-// bundle. Debug builds load it from Metro instead.
-android.applicationVariants.configureEach { variant ->
-    if (variant.buildType.debuggable) return
+// bundle — built the way the app's own is, with the node and Expo CLI the \`react\` block resolves.
+// Variants the app loads from Metro, the request UI does too.
+abstract class DcApiBundleTask extends Exec {
+    @OutputDirectory abstract DirectoryProperty getJsBundleDir()
+    @OutputDirectory abstract DirectoryProperty getResourcesDir()
 
-    def variantName = variant.name.capitalize()
-    def dcApiProjectRoot = rootProject.projectDir.parentFile
-    def dcApiAssetsDir = file("\${projectDir}/src/main/assets")
+    /** Where the app's own bundle task writes its images. */
+    @InputFiles abstract DirectoryProperty getAppResourcesDir()
+}
 
-    def bundleDcApi = tasks.register("bundleDcApi\${variantName}JsAndAssets", Exec) {
-        description = "Bundles the digital credentials API request UI"
-        workingDir dcApiProjectRoot
-        doFirst { dcApiAssetsDir.mkdirs() }
-        commandLine "npx", "expo", "export:embed",
-            "--platform", "android",
-            "--dev", "false",
-            "--entry-file", "${entryFile}",
-            "--bundle-output", "\${dcApiAssetsDir}/${bundleAsset}",
-            "--assets-dest", "\${buildDir}/generated/dcApiAssets/\${variant.name}"
+// Looked up by name: inside the closures below \`react\` resolves against their delegates instead.
+def dcApiReact = project.extensions.getByName("react")
+def dcApiCommand = dcApiReact.nodeExecutableAndArgs.get() + [dcApiReact.cliFile.get().asFile.absolutePath]
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (dcApiReact.debuggableVariants.get().any { it.equalsIgnoreCase(variant.name) }) return
+
+        def variantName = variant.name.capitalize()
+        def appBundle = project.tasks.named("createBundle\${variantName}JsAndAssets")
+
+        def bundleDcApi = project.tasks.register("bundleDcApi\${variantName}JsAndAssets", DcApiBundleTask) {
+            description = "Bundles the digital credentials API request UI"
+            workingDir rootProject.projectDir.parentFile
+            appResourcesDir.set(appBundle.flatMap { it.resourcesDir })
+            // Nothing the bundle is built from is declared, so without this it would never rebuild.
+            outputs.upToDateWhen { false }
+            doFirst {
+                commandLine(dcApiCommand + [
+                    "export:embed",
+                    "--platform", "android",
+                    "--dev", "false",
+                    "--entry-file", "${entryFile}",
+                    "--bundle-output", new File(jsBundleDir.get().asFile, "${bundleAsset}").absolutePath,
+                    "--assets-dest", resourcesDir.get().asFile.absolutePath
+                ])
+            }
+            // Both bundles' images end up in the same variant's resources, where AGP rejects one
+            // defined twice — and an image both UIs use is exactly that. A resource is named after
+            // the image's path, so one the app already ships is the same file: drop this copy.
+            doLast {
+                def resources = resourcesDir.get().asFile
+                def appResources = appResourcesDir.get().asFile
+                resources.eachFileRecurse(groovy.io.FileType.FILES) { resource ->
+                    if (new File(appResources, resources.toPath().relativize(resource.toPath()).toString()).exists()) {
+                        resource.delete()
+                    }
+                }
+            }
+        }
+
+        // Generated sources rather than files under src/main: packaged like the app's own bundle and
+        // images — the images land in res/, not assets/ — and removed by \`clean\`.
+        variant.sources.assets.addGeneratedSourceDirectory(bundleDcApi, { it.jsBundleDir })
+        variant.sources.res.addGeneratedSourceDirectory(bundleDcApi, { it.resourcesDir })
     }
-
-    tasks.named("merge\${variantName}Assets").configure { dependsOn(bundleDcApi) }
 }`
 }

@@ -2,6 +2,7 @@ package id.animo.digitalcredentials
 
 import android.app.Activity.RESULT_OK
 import android.content.Context
+import android.content.Intent
 import android.util.Base64
 import androidx.credentials.registry.provider.RegistryManager
 import expo.modules.kotlin.exception.CodedException
@@ -43,22 +44,24 @@ class DigitalCredentialsApiModule : Module() {
 
         AsyncFunction("sendResponse") { credentialResponse: String ->
             val activity = requestActivity
-            activity.setResult(
-                    RESULT_OK,
-                    DigitalCredentialsApiSingleton.getResponseIntent(
-                            activity.intent,
-                            credentialResponse
-                    )
-            )
-            activity.finishAndRemoveTask()
+            // Built here rather than on the main thread, so a response that does not parse rejects
+            // the JS call instead of being lost on another thread.
+            val result = DigitalCredentialsApiSingleton.getResponseIntent(activity.intent, credentialResponse)
+            finish(activity, result)
         }
 
+        // A no-op when nothing is in flight, like on iOS: declining twice, or after the request was
+        // already answered, has nothing left to decline.
         Function("sendErrorResponse") { errorMessage: String ->
-            val activity = requestActivity
-            activity.setResult(
-                    RESULT_OK,
-                    DigitalCredentialsApiSingleton.getErrorResponseIntent(errorMessage)
-            )
+            val activity = DigitalCredentialsApiSingleton.currentRequestActivity ?: return@Function
+            finish(activity, DigitalCredentialsApiSingleton.getErrorResponseIntent(errorMessage))
+        }
+    }
+
+    /** Neither function is called on the main thread, and finishing an activity belongs there. */
+    private fun finish(activity: DigitalCredentialsApiActivity, result: Intent) {
+        activity.runOnUiThread {
+            activity.setResult(RESULT_OK, result)
             activity.finishAndRemoveTask()
         }
     }

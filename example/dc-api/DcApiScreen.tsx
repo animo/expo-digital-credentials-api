@@ -17,7 +17,7 @@ import { credentials } from '../credentials'
  *
  * The flow is the same on both: say who is asking and whether that can be proven, show what is being
  * asked for, and only commit once the user accepts. What differs is where the detail comes from — on
- * Android the picker already delivered the protocol request and the credential it matched, on iOS the
+ * Android the picker already delivered the protocol request and the credentials it matched, on iOS the
  * OS parsed the request for us and holds the real thing back until `approve()`.
  */
 export function DcApiScreen({ request }: { request: DcApiRequest }) {
@@ -80,9 +80,6 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
         return
       }
 
-      const selected = request.requests[request.selectedRequestIndex]
-      if (!selected) throw new Error('The request carries no protocol this wallet understands')
-
       // Android hands over no origin when a native app asked for itself. A response is bound to the
       // origin, so there is nothing to bind to here: this example only answers the web. A wallet
       // that wants to answer apps derives the app-based origin from `callingPackage` instead.
@@ -94,18 +91,24 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
       // `identitycredentials.action.GET_CREDENTIALS` instead of through the system picker. A wallet
       // then matches the request against its own storage, the way the iOS branch above has to; this
       // example leans on the picker's match and has nothing to fall back on.
-      const { selectedCredentialId } = request
-      if (selectedCredentialId === undefined) {
+      const { selection } = request
+      if (selection === undefined) {
         throw new Error('The request did not come from the system picker, so no credential was matched')
       }
 
+      const selected = pickedRequest(request)
+      if (!selected) throw new Error('The request carries no protocol this wallet understands')
+
+      // The picker returns one credential per credential the request asks for together — several
+      // when a DCQL query or a deviceRequest asks for more than one — and the response carries them
+      // all. Which query each one answers comes from matching it against the request.
       if (selected.protocol === 'org-iso-mdoc') {
-        // The picker matched one credential against the request, so there is one document to answer
-        // with and no doctype to go with it until the deviceRequest is parsed.
-        const data = await buildIsoMdocResponse(selected.data, request.origin, [{ credentialId: selectedCredentialId }])
+        // No doctype to go with the credentials until the deviceRequest is parsed.
+        const answers = selection.credentialIds.map((credentialId) => ({ credentialId }))
+        const data = await buildIsoMdocResponse(selected.data, request.origin, answers)
         await request.respond({ protocol: selected.protocol, data })
       } else {
-        const data = await buildOpenid4vpResponse(selected.data, request.origin, selectedCredentialId)
+        const data = await buildOpenid4vpResponse(selected.data, request.origin, selection.credentialIds)
         await request.respond({ protocol: selected.protocol, data })
       }
     } catch (shareError) {
@@ -120,7 +123,7 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
   // answer before anything can be shared.
   const canShare =
     request.platform === 'android'
-      ? request.selectedCredentialId !== undefined
+      ? request.selection !== undefined
       : selection !== undefined &&
         answers.length > 0 &&
         selection.every(({ entry, set }) => !entry.isMandatory || set?.isSatisfiable)
@@ -291,7 +294,9 @@ function ReaderAuthentications({ readerAuthentications }: { readerAuthentication
  * the request itself, which is protocol work: see `summarize`.
  */
 function AndroidRequestSummary({ request }: { request: AndroidDcApiRequest }) {
-  const selected = request.requests[request.selectedRequestIndex]
+  // Without a pick there is no matched request to show, so the first one stands in.
+  const selected = pickedRequest(request) ?? request.requests[0]
+  const credentialIds = request.selection?.credentialIds ?? []
 
   return (
     <>
@@ -304,14 +309,18 @@ function AndroidRequestSummary({ request }: { request: AndroidDcApiRequest }) {
 
       {/* Absent when the caller reached the wallet through `identitycredentials.action.GET_CREDENTIALS`,
           which does not go through the picker. A real wallet matches the request itself then. */}
-      <Section
-        title="Sharing"
-        subtitle={request.selectedCredentialId ? 'Picked in the system picker' : 'Nothing was picked'}
-      >
-        <Text style={styles.claim}>
-          {request.selectedCredentialId ??
-            'The request did not come from the system picker, so this example has no credential to answer with.'}
-        </Text>
+      <Section title="Sharing" subtitle={request.selection ? 'Picked in the system picker' : 'Nothing was picked'}>
+        {credentialIds.length > 0 ? (
+          credentialIds.map((credentialId) => (
+            <Text key={credentialId} style={styles.claim}>
+              {credentialId}
+            </Text>
+          ))
+        ) : (
+          <Text style={styles.claim}>
+            The request did not come from the system picker, so this example has no credential to answer with.
+          </Text>
+        )}
       </Section>
 
       <Section title={selected ? selected.protocol : 'No supported protocol'}>
@@ -329,6 +338,21 @@ function AndroidRequestSummary({ request }: { request: AndroidDcApiRequest }) {
       </Section>
     </>
   )
+}
+
+/**
+ * The request the picker matched the credentials against.
+ *
+ * Exact with the `cmwallet` and `ubique` matchers, and with `multipaz` as long as the verifier sent
+ * one request per protocol. When it sent several with the same protocol, `multipaz` does not say
+ * which one it matched. It answers the first one the registered credentials satisfy, so a real
+ * wallet evaluates the candidates in order against the picked credentials. This example has no DCQL
+ * engine and takes the first candidate.
+ */
+function pickedRequest(request: AndroidDcApiRequest): DcApiProtocolRequest | undefined {
+  const index = request.selection?.requestIndex ?? request.selection?.candidateRequestIndexes[0]
+
+  return index === undefined ? undefined : request.requests[index]
 }
 
 function readerAuthenticationHint(request?: DcApiProtocolRequest): string {
@@ -503,9 +527,9 @@ async function buildIsoMdocResponse(
 async function buildOpenid4vpResponse(
   data: string,
   origin: string,
-  credentialId: string
+  credentialIds: string[]
 ): Promise<Record<string, unknown>> {
-  console.log('[example] building an OpenID4VP response', { origin, credentialId, request: data.slice(0, 64) })
+  console.log('[example] building an OpenID4VP response', { origin, credentialIds, request: data.slice(0, 64) })
   return { vp_token: 'REPLACE_WITH_VP_TOKEN' }
 }
 

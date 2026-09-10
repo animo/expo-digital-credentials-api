@@ -3,6 +3,7 @@ package id.animo.digitalcredentials
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.util.Log
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.JSBundleLoader
@@ -83,6 +84,9 @@ object DcApiReactHost {
                             packageList.getMethod("getPackages").invoke(instance) as
                                     List<ReactPackage>
                         }
+                        // Not fatal on its own — the request UI can still start — but every module
+                        // it uses will then be missing, which is far easier to chase from here.
+                        .onFailure { Log.w("DigitalCredentialsApi", "could not load the autolinked packages", it) }
                         .getOrDefault(emptyList())
 
         val expoModules =

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
+import { encodeCredentialsBase64 } from '../matchers'
 import { encodeCbor } from '../matchers/cbor'
-import { encodeCredmanCredentials, parseCredmanEntryId } from '../matchers/credman'
-import { encodeMultipazCredentials, parseMultipazEntryId } from '../matchers/multipaz'
+import { encodeCredmanCredentials, parseCredmanSelection } from '../matchers/credman'
+import { encodeMultipazCredentials, parseMultipazSelection } from '../matchers/multipaz'
 import type { DcApiCredential } from '../types'
 
 const mdl: DcApiCredential = {
@@ -155,19 +156,42 @@ describe('multipaz matcher', () => {
     expect(encoded).toContain('Utrecht')
   })
 
-  test('parses the picker entry id', () => {
-    expect(parseMultipazEntryId('0 org-iso-mdoc mdl-1', ['openid4vp', 'org-iso-mdoc'])).toEqual({
-      credentialId: 'mdl-1',
-      requestIndex: 1,
+  test('refuses identifiers that are not base64', () => {
+    const credential = { ...pid, android: { issuerAuthorityKeyIdentifiers: ['N1OrmtAijM_4g9xcF7evzmkzXVs'] } }
+
+    expect(() => encodeMultipazCredentials([credential], ['openid4vp'])).toThrow(
+      "'android.issuerAuthorityKeyIdentifiers' holds 'N1OrmtAijM_4g9xcF7evzmkzXVs', which is not base64, for credential 'pid-1'"
+    )
+  })
+
+  test('parses the picker entry ids', () => {
+    expect(parseMultipazSelection(['0 org-iso-mdoc mdl-1'], ['openid4vp', 'org-iso-mdoc'])).toEqual({
+      credentialIds: ['mdl-1'],
+      requestIndexes: [1],
     })
 
     // Document ids may contain spaces, the first two fields cannot.
-    expect(parseMultipazEntryId('2 openid4vp my credential', ['openid4vp'])).toEqual({
-      credentialId: 'my credential',
-      requestIndex: 0,
+    expect(parseMultipazSelection(['2 openid4vp my credential'], ['openid4vp'])).toEqual({
+      credentialIds: ['my credential'],
+      requestIndexes: [0],
     })
 
-    expect(() => parseMultipazEntryId('nonsense', ['openid4vp'])).toThrow(/Unexpected selected entry id/)
+    expect(() => parseMultipazSelection(['nonsense'], ['openid4vp'])).toThrow(/Unexpected selected entry id/)
+  })
+
+  test('parses a picked set, one credential per slot', () => {
+    expect(
+      parseMultipazSelection(['1 openid4vp-v1-signed pid-1', '1 openid4vp-v1-signed mdl-1'], ['openid4vp-v1-signed'])
+    ).toEqual({ credentialIds: ['pid-1', 'mdl-1'], requestIndexes: [0] })
+  })
+
+  test('names every request with the matched protocol, since the entries do not say which', () => {
+    expect(
+      parseMultipazSelection(['0 openid4vp pid-1'], ['openid4vp', 'org-iso-mdoc', 'openid4vp']).requestIndexes
+    ).toEqual([0, 2])
+
+    // A protocol the verifier did not send cannot be mapped at all.
+    expect(parseMultipazSelection(['0 openid4vp pid-1'], ['org-iso-mdoc']).requestIndexes).toEqual([])
   })
 })
 
@@ -210,12 +234,23 @@ describe('cmwallet / ubique matcher', () => {
     expect([...encoded.slice(4, 8)]).toEqual([0, 1, 2, 3])
   })
 
+  test('refuses a reader gate it would drop', () => {
+    const gated = { ...pid, android: { supportedAuthorityKeyIdentifiers: ['AAECAw=='] } }
+
+    expect(() => encodeCredentialsBase64('cmwallet', [gated], { protocols: ['openid4vp'] })).toThrow(
+      /cannot gate credential 'pid-1' on its reader/
+    )
+    // Issuer identifiers only narrow what `trusted_authorities` matches, which these matchers ignore.
+    const withIssuer = { ...pid, android: { issuerAuthorityKeyIdentifiers: ['AAECAw=='] } }
+    expect(() => encodeCredentialsBase64('ubique', [withIssuer], { protocols: ['openid4vp'] })).not.toThrow()
+  })
+
   test('parses the picker entry id', () => {
-    expect(parseCredmanEntryId(JSON.stringify({ provider_idx: 1, id: 'mdl-1' }))).toEqual({
-      credentialId: 'mdl-1',
-      requestIndex: 1,
+    expect(parseCredmanSelection([JSON.stringify({ provider_idx: 1, id: 'mdl-1' })])).toEqual({
+      credentialIds: ['mdl-1'],
+      requestIndexes: [1],
     })
 
-    expect(() => parseCredmanEntryId(JSON.stringify({ provider_idx: 0 }))).toThrow(/Unexpected selected entry id/)
+    expect(() => parseCredmanSelection([JSON.stringify({ provider_idx: 0 })])).toThrow(/Unexpected selected entry id/)
   })
 })

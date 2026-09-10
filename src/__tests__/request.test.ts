@@ -26,7 +26,7 @@ const androidRequest = {
   origin: 'https://digital-credentials.dev',
   callingPackage: 'com.android.chrome',
   matcher: 'multipaz' as const,
-  selectedEntryId: '0 org-iso-mdoc mdl-1',
+  selectedEntryIds: ['0 org-iso-mdoc mdl-1'],
   requests: [openid4vpRequest, isoMdocRequest],
 }
 
@@ -73,22 +73,48 @@ describe('parseRequest, on android', () => {
       platform: 'android',
       origin: 'https://digital-credentials.dev',
       callingPackage: 'com.android.chrome',
-      selectedCredentialId: 'mdl-1',
+      selection: { credentialIds: ['mdl-1'] },
       requests: [openid4vpRequest, isoMdocRequest],
     })
     expect('approve' in request).toBe(false)
   })
 
   test('resolves the picked entry against the matcher that produced it', () => {
-    expect(parseRequest(androidRequest)).toMatchObject({ selectedRequestIndex: 1 })
+    expect(parseRequest(androidRequest)).toMatchObject({
+      selection: { requestIndex: 1, candidateRequestIndexes: [1] },
+    })
 
     expect(
       parseRequest({
         ...androidRequest,
         matcher: 'cmwallet',
-        selectedEntryId: JSON.stringify({ provider_idx: 0, id: 'pid-1' }),
+        selectedEntryIds: [JSON.stringify({ provider_idx: 0, id: 'pid-1' })],
       })
-    ).toMatchObject({ selectedCredentialId: 'pid-1', selectedRequestIndex: 0 })
+    ).toMatchObject({ selection: { credentialIds: ['pid-1'], requestIndex: 0 } })
+  })
+
+  test('carries every credential of a picked set', () => {
+    // A DCQL query for two credentials: the picker returns one per slot of the set.
+    const request = parseRequest({
+      ...androidRequest,
+      selectedEntryIds: ['0 openid4vp pid-1', '0 openid4vp mdl-1'],
+    }) as AndroidDcApiRequest
+
+    expect(request.selection).toEqual({
+      credentialIds: ['pid-1', 'mdl-1'],
+      requestIndex: 0,
+      candidateRequestIndexes: [0],
+    })
+  })
+
+  test('leaves the request open when several share the matched protocol', () => {
+    const request = parseRequest({
+      ...androidRequest,
+      requests: [openid4vpRequest, isoMdocRequest, openid4vpRequest],
+      selectedEntryIds: ['0 openid4vp pid-1'],
+    }) as AndroidDcApiRequest
+
+    expect(request.selection).toMatchObject({ requestIndex: undefined, candidateRequestIndexes: [0, 2] })
   })
 
   test('drops requests it cannot represent, and keeps the picked index pointing at the same one', () => {
@@ -97,12 +123,12 @@ describe('parseRequest, on android', () => {
       ...androidRequest,
       matcher: 'cmwallet',
       requests: [{ protocol: 'openid4vp-v2-not-a-thing', data: '{}' }, isoMdocRequest, openid4vpRequest],
-      selectedEntryId: JSON.stringify({ provider_idx: 2, id: 'pid-1' }),
+      selectedEntryIds: [JSON.stringify({ provider_idx: 2, id: 'pid-1' })],
     })
 
     expect(request).toMatchObject({
       requests: [isoMdocRequest, openid4vpRequest],
-      selectedRequestIndex: 1,
+      selection: { requestIndex: 1 },
     })
   })
 
@@ -117,22 +143,23 @@ describe('parseRequest, on android', () => {
 
   test('carries no picked credential when the request never went through the picker', () => {
     // `identitycredentials.action.GET_CREDENTIALS` reaches the wallet without a selected entry.
-    const request = parseRequest({ ...androidRequest, selectedEntryId: null }) as AndroidDcApiRequest
+    const request = parseRequest({ ...androidRequest, selectedEntryIds: null }) as AndroidDcApiRequest
 
-    expect(request.selectedCredentialId).toBeUndefined()
-    expect(request.selectedRequestIndex).toBe(0)
+    expect(request.selection).toBeUndefined()
     expect(request.requests).toHaveLength(2)
   })
 
-  test('falls back to the first request when the matcher answer cannot be mapped', () => {
+  test('names no request when the matcher answer cannot be mapped', () => {
     const request = parseRequest({
       ...androidRequest,
       matcher: 'cmwallet',
       requests: [openid4vpRequest],
-      selectedEntryId: JSON.stringify({ provider_idx: 7, id: 'pid-1' }),
+      selectedEntryIds: [JSON.stringify({ provider_idx: 7, id: 'pid-1' })],
     })
 
-    expect(request).toMatchObject({ selectedRequestIndex: 0 })
+    expect(request).toMatchObject({
+      selection: { credentialIds: ['pid-1'], requestIndex: undefined, candidateRequestIndexes: [] },
+    })
   })
 })
 
@@ -151,7 +178,7 @@ describe('parseRequest, on ios', () => {
     const request = parseRequest(iosRequest)
 
     expect('requests' in request).toBe(false)
-    expect('selectedCredentialId' in request).toBe(false)
+    expect('selection' in request).toBe(false)
 
     mockNativeModule.approveRequest.mockResolvedValue(JSON.stringify([isoMdocRequest]))
     expect(request.platform === 'ios' && (await request.approve())).toEqual([isoMdocRequest])
@@ -160,14 +187,14 @@ describe('parseRequest, on ios', () => {
 
 describe('responding', () => {
   test('respond sends the protocol and its response object as they are', async () => {
-    const request = parseRequest(androidRequest)
-    // Only android can answer OpenID4VP, so the union has to be narrowed to say so.
-    if (request.platform !== 'android') throw new Error('expected an android request')
-
-    await request.respond({ protocol: 'org-iso-mdoc', data: { response: 'b64url' } })
+    await parseRequest(androidRequest).respond({ protocol: 'org-iso-mdoc', data: { response: 'b64url' } })
     expect(mockNativeModule.sendResponse).toHaveBeenCalledWith(
       '{"protocol":"org-iso-mdoc","data":{"response":"b64url"}}'
     )
+
+    const request = parseRequest(androidRequest)
+    // Only android can answer OpenID4VP, so the union has to be narrowed to say so.
+    if (request.platform !== 'android') throw new Error('expected an android request')
 
     await request.respond({ protocol: 'openid4vp', data: { vp_token: {} } })
     expect(mockNativeModule.sendResponse).toHaveBeenCalledWith('{"protocol":"openid4vp","data":{"vp_token":{}}}')
@@ -179,5 +206,28 @@ describe('responding', () => {
 
     parseRequest(androidRequest).decline('no matching credential')
     expect(mockNativeModule.sendErrorResponse).toHaveBeenCalledWith('no matching credential')
+  })
+
+  test('answers a request once', async () => {
+    const request = parseRequest(androidRequest)
+
+    await request.respond({ protocol: 'org-iso-mdoc', data: { response: 'b64url' } })
+    await expect(request.respond({ protocol: 'org-iso-mdoc', data: { response: 'b64url' } })).rejects.toThrow(
+      'already answered'
+    )
+    request.decline()
+
+    expect(mockNativeModule.sendResponse).toHaveBeenCalledTimes(1)
+    expect(mockNativeModule.sendErrorResponse).not.toHaveBeenCalled()
+  })
+
+  test('can still decline after a response the platform refused', async () => {
+    const request = parseRequest(androidRequest)
+    mockNativeModule.sendResponse.mockRejectedValueOnce(new Error('The credential response must be a JSON object'))
+
+    await expect(request.respond({ protocol: 'org-iso-mdoc', data: { response: 'b64url' } })).rejects.toThrow()
+    request.decline()
+
+    expect(mockNativeModule.sendErrorResponse).toHaveBeenCalledWith('The request was declined')
   })
 })

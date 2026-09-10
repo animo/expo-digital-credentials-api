@@ -1,7 +1,7 @@
 import { type DcApiCredential, type DcApiMatcher, type DcApiProtocol, dcApiProtocols } from '../types'
 import { encodeBase64 } from '../util'
-import { encodeCredmanCredentials, parseCredmanEntryId } from './credman'
-import { encodeMultipazCredentials, parseMultipazEntryId } from './multipaz'
+import { encodeCredmanCredentials, parseCredmanSelection } from './credman'
+import { encodeMultipazCredentials, parseMultipazSelection } from './multipaz'
 
 export const defaultMatcher: DcApiMatcher = 'multipaz'
 
@@ -27,6 +27,16 @@ export function encodeCredentialsBase64(
     )
   }
 
+  // Issuer identifiers only narrow what a verifier's `trusted_authorities` matches, which the other
+  // matchers ignore anyway. A reader gate they would drop silently, offering the credential to every
+  // reader instead of the ones it was meant for.
+  const gated = credentials.find((credential) => credential.android?.supportedAuthorityKeyIdentifiers?.length)
+  if (matcher !== 'multipaz' && gated) {
+    throw new Error(
+      `The '${matcher}' matcher cannot gate credential '${gated.id}' on its reader. Only 'multipaz' supports android.supportedAuthorityKeyIdentifiers.`
+    )
+  }
+
   return encodeBase64(
     matcher === 'multipaz'
       ? encodeMultipazCredentials(credentials, protocols)
@@ -35,12 +45,21 @@ export function encodeCredentialsBase64(
 }
 
 /**
- * Resolve the picker entry the user tapped. Each matcher encodes it differently, so the request
- * carries the matcher that produced it.
- *
- * `requestIndex` is in the verifier's index space — the requests as the matcher saw them, unknown
- * protocols included — and is `-1` when it cannot be resolved at all.
+ * What the user picked, in the verifier's index space: the requests as the matcher saw them, unknown
+ * protocols included.
  */
-export function parseSelectedEntry(matcher: DcApiMatcher, entryId: string, protocols: DcApiProtocol[]) {
-  return matcher === 'multipaz' ? parseMultipazEntryId(entryId, protocols) : parseCredmanEntryId(entryId)
+export interface ParsedSelection {
+  /** The picked credentials, one per slot of the picked set. */
+  credentialIds: string[]
+
+  /** Every request the pick may have been matched against, in order. Exact when there is one. */
+  requestIndexes: number[]
+}
+
+/**
+ * Resolve the picker entries the user chose — one, or one per slot of a set. Each matcher encodes
+ * them differently, so the request carries the matcher that produced them.
+ */
+export function parseSelection(matcher: DcApiMatcher, entryIds: string[], protocols: string[]): ParsedSelection {
+  return matcher === 'multipaz' ? parseMultipazSelection(entryIds, protocols) : parseCredmanSelection(entryIds)
 }

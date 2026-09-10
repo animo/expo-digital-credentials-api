@@ -25,6 +25,11 @@ export const withExtensionPodfile: ConfigPlugin<DigitalCredentialsApiPluginOptio
       const included = getIncludedPackages(options)
       const rubyList = (names: string[]) => names.map((name) => `'${name}'`).join(', ')
 
+      // Relative to `ios/`, like the React Native path below: a project that commits its native
+      // directories commits this Podfile too, and an absolute path only resolves on the machine
+      // that ran the prebuild.
+      const fromIosRoot = (file: string) => path.relative(iosRoot, file).split(path.sep).join('/')
+
       // `use_expo_modules!` only takes an exclusion, so an allowlist is inverted here against what
       // autolinking actually resolved — which is the real list, not a guess at what is installed.
       const useExpoModules = included
@@ -63,7 +68,7 @@ export const withExtensionPodfile: ConfigPlugin<DigitalCredentialsApiPluginOptio
 
   dc_api_filter_command = [
     'node', '--no-warnings', '--eval',
-    "require('${autolinkingFilterPath()}').run(" + dc_api_json + ", ${filter})"
+    "require(#{File.join(Pod::Config.instance.installation_root.to_s, '${fromIosRoot(autolinkingFilterPath())}').to_json}).run(" + dc_api_json + ", ${filter})"
   ]
 
   # \`use_native_modules!\` writes its result to build/generated/autolinking/autolinking.json, and
@@ -94,7 +99,7 @@ end`
       // Appended after the app target: React Native's codegen only runs for the first
       // `use_react_native!` in the Podfile, and it must see the app's module list — otherwise the
       // app is built against codegen artifacts generated from the extension's much smaller one.
-      const body = `${target}\n\n${nilSafeComponentsHook(nilSafeComponentsScriptPath())}`
+      const body = `${target}\n\n${nilSafeComponentsHook(fromIosRoot(nilSafeComponentsScriptPath()))}`
       fs.writeFileSync(podfilePath, replaceGeneratedBlock(callHookFromPostInstall(podfilePath, podfile), '#', body))
 
       return config
@@ -113,8 +118,8 @@ const hookName = 'dc_api_nil_safe_third_party_components'
  * file on every build, so anything done at install time is overwritten before it is compiled. The
  * phase is ordered directly after it, and before the sources it feeds.
  *
- * `scriptPath` is the built rewriter the phase runs, passed in rather than resolved here so this
- * stays a pure function of what it generates.
+ * `scriptPath` is the built rewriter the phase runs, relative to `ios/` — passed in rather than
+ * resolved here so this stays a pure function of what it generates.
  */
 export const nilSafeComponentsHook = (scriptPath: string) => `def ${hookName}(installer)
   codegen = installer.pods_project.targets.find { |target| target.name == 'ReactCodegen' }
@@ -139,7 +144,7 @@ if [ -z "$NODE_BINARY" ]; then
   echo "warning: [expo-digital-credentials-api] node not found, leaving RCTThirdPartyComponentsProvider as generated"
   exit 0
 fi
-"$NODE_BINARY" "${scriptPath}" "$PODS_ROOT/../build/generated/ios"
+"$NODE_BINARY" "$PODS_ROOT/../${scriptPath}" "$PODS_ROOT/../build/generated/ios"
 DC_API_SH
 
   # Codegen rewrites the file every build, so this has to as well; without it Xcode decides the
