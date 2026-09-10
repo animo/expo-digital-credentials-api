@@ -78,4 +78,4 @@ enum ExtensionFonts {
 }
 
 /// Written by the config plugin from `ios.fonts`.
-private let fontsInfoPlistKey = "ANIMO_DC_API_FONTS"
+private let fontsInfoPlistKey = "EXPO_DC_API_FONTS"

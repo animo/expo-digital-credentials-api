@@ -39,6 +39,23 @@ public protocol DcApiRequestSession: AnyObject {
 }
 
 /// Only one request is in flight per extension process, so a single slot is enough.
+///
+/// Locked: the scene writes it on the main actor and the module reads it from its own queue.
 public enum DcApiRequestSessionStore {
-    public static var current: DcApiRequestSession?
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var session: DcApiRequestSession?
+
+    public static var current: DcApiRequestSession? {
+        get { lock.withLock { session } }
+        set { lock.withLock { session = newValue } }
+    }
+
+    /// Empties the slot once `finished` is done, so the finished session — its request context and
+    /// the raw request with it — is not kept alive in a memory-capped extension. Left alone when a
+    /// newer request has taken the slot since.
+    public static func clear(_ finished: DcApiRequestSession) {
+        lock.withLock {
+            if session === finished { session = nil }
+        }
+    }
 }

@@ -2,7 +2,9 @@
   "extends": "expo-module-scripts/tsconfig.plugin",
   "compilerOptions": {
     "outDir": "build",
-    "rootDir": "src",
+    // The package root rather than `src`: the plugin also compiles `../src/iosDocumentTypes.ts`,
+    // which it shares with the module. That nests the output under `build/plugin/src`.
+    "rootDir": "..",
     "types": ["node"]
   },
   "include": ["./src"],

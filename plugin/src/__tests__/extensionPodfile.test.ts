@@ -46,24 +46,27 @@ describe('callHookFromPostInstall', () => {
 })
 
 describe('nilSafeComponentsHook', () => {
+  const scriptPath =
+    '../node_modules/@animo-id/expo-digital-credentials-api/plugin/build/plugin/src/ios/thirdPartyComponentsProvider.js'
+
+  // The Podfile is committed along with `ios/` in some projects, and an absolute path only exists on
+  // the machine that ran the prebuild.
+  test('runs the script relative to the project, not from an absolute path', () => {
+    expect(nilSafeComponentsHook(scriptPath)).toContain(`"$NODE_BINARY" "$PODS_ROOT/../${scriptPath}"`)
+  })
+
   // CocoaPods renames a podspec's script phases to '[CP-User] <name>', so an equality check finds
   // nothing and the rewrite lands *before* codegen regenerates the file — silently doing nothing.
   test("finds codegen's phase by suffix, not by its declared name", () => {
-    expect(nilSafeComponentsHook('/plugin/build/ios/thirdPartyComponentsProvider.js')).toContain(
-      "end_with?('Generate Specs')"
-    )
+    expect(nilSafeComponentsHook(scriptPath)).toContain("end_with?('Generate Specs')")
   })
 
   // Xcode skips a phase it believes is up to date, and codegen rewrites the file on every build.
   test('runs on every build', () => {
-    expect(nilSafeComponentsHook('/plugin/build/ios/thirdPartyComponentsProvider.js')).toContain(
-      "phase.always_out_of_date = '1'"
-    )
+    expect(nilSafeComponentsHook(scriptPath)).toContain("phase.always_out_of_date = '1'")
   })
 
   test('reuses the phase it already added, so a second pod install does not stack another', () => {
-    expect(nilSafeComponentsHook('/plugin/build/ios/thirdPartyComponentsProvider.js')).toContain(
-      'phase ||= codegen.new_shell_script_build_phase(name)'
-    )
+    expect(nilSafeComponentsHook(scriptPath)).toContain('phase ||= codegen.new_shell_script_build_phase(name)')
   })
 })

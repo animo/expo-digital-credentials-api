@@ -1,4 +1,4 @@
-import type { IosSupportedDocumentType } from './documentTypes'
+import type { IosSupportedDocumentType } from '../../src/iosDocumentTypes'
 
 export type DigitalCredentialsApiPluginOptions = {
   /**

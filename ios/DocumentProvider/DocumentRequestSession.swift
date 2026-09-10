@@ -152,6 +152,15 @@ final class DocumentRequestSession: DcApiRequestSession, @unchecked Sendable {
                         let responseData = try await withCheckedThrowingContinuation {
                             (responseContinuation: CheckedContinuation<Data, Error>) in
                             self.lock.lock()
+                            // A cancel that landed after the OS released the request but before
+                            // this point has already failed the session — and found no response
+                            // continuation to fail. Stored anyway, nothing would ever resume it,
+                            // and both the OS and the JS awaiting `approve()` would hang.
+                            guard !self.didFinish else {
+                                self.lock.unlock()
+                                responseContinuation.resume(throwing: DocumentRequestSessionError.cancelled)
+                                return
+                            }
                             self.responseContinuation = responseContinuation
                             let approveContinuation = self.approveContinuation
                             self.approveContinuation = nil
@@ -189,6 +198,8 @@ final class DocumentRequestSession: DcApiRequestSession, @unchecked Sendable {
         lock.lock()
         didFinish = true
         lock.unlock()
+
+        DcApiRequestSessionStore.clear(self)
     }
 
     private func fail(with error: Error) {
@@ -203,6 +214,8 @@ final class DocumentRequestSession: DcApiRequestSession, @unchecked Sendable {
         approveContinuation = nil
         responseContinuation = nil
         lock.unlock()
+
+        DcApiRequestSessionStore.clear(self)
 
         approve?.resume(throwing: error)
         response?.resume(throwing: error)

@@ -85,7 +85,7 @@ public final class DigitalCredentialsApiModule: Module {
         /// config plugin mirrors the entitlement into. `nil` when the key is absent — a project
         /// that set the entitlement by hand — where the caller falls back to Apple's full set.
         Function("getEntitledDocumentTypes") { () -> [String]? in
-            Bundle.main.object(forInfoDictionaryKey: "ANIMO_DC_API_DOCUMENT_TYPES") as? [String]
+            Bundle.main.object(forInfoDictionaryKey: "EXPO_DC_API_DOCUMENT_TYPES") as? [String]
         }
 
         /// Path of the app group container, in whichever process asks — so the app and the request
@@ -150,10 +150,22 @@ public final class DigitalCredentialsApiModule: Module {
     ///
     /// Reading it requires authorization, and the permission prompt is only triggered by the first
     /// `addRegistration` — so before that this throws `.notAuthorized` (error 2). Nothing can be
-    /// registered while unauthorized anyway, so an unreadable store is an empty one.
+    /// registered while unauthorized anyway, so an unreadable store is an empty one. Any other
+    /// failure to read it is thrown.
+    ///
+    /// Not atomic: `registerDocuments` empties the store before adding the new set, so a failure
+    /// partway leaves fewer registrations than either set. Calling it again with the full set
+    /// recovers.
     @available(iOS 26.0, *)
     private static func removeAllRegistrations(from store: IdentityDocumentProviderRegistrationStore) async throws {
-        for registration in (try? await store.registrations) ?? [] {
+        let registrations: [any IdentityDocumentRegistration]
+        do {
+            registrations = try await store.registrations
+        } catch IdentityDocumentProviderRegistrationStore.RegistrationError.notAuthorized {
+            return
+        }
+
+        for registration in registrations {
             try await store.removeRegistration(forDocumentIdentifier: registration.documentIdentifier)
         }
     }

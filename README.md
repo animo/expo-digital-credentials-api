@@ -302,14 +302,14 @@ await removeCredential("mdl");
 On Android you choose the matcher: the wasm module Credential Manager runs to match your credentials
 against the request.
 
-| Matcher | Protocols | Icons | Claim values |
-|---|---|---|---|
-| `multipaz` (default) | `openid4vp`, `openid4vp-v1-*`, `org-iso-mdoc` | ✅ | ✅ |
-| `ubique` | `openid4vp` | ✅ | ✅ |
-| `cmwallet` | `openid4vp` | ❌ | ❌ |
+| Matcher | Protocols | Icons | Claim values | Several credentials per request | Reports the matched request |
+|---|---|---|---|---|---|
+| `multipaz` (default) | `openid4vp`, `openid4vp-v1-*`, `org-iso-mdoc` | ✅ | ✅ | ✅ | Protocol only, see [what was picked](#what-was-picked) |
+| `ubique` | `openid4vp` | ✅ | ✅ | ❌ | ✅ |
+| `cmwallet` | `openid4vp` | ❌ | ❌ | ❌ | ✅ |
 
 All three support SD-JWT VC and mdoc, signed and unsigned. Sources:
-[multipaz](https://github.com/openwallet-foundation/multipaz/tree/main/multipaz-dcapi/src/androidMain/matcher) (Apache-2.0),
+[multipaz](https://github.com/openwallet-foundation/multipaz/tree/1b045d0e/multipaz-dcapi/src/androidMain/matcher) (Apache-2.0),
 [oid4vp-wasm-matcher](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.1.0),
 [CMWallet](https://github.com/digitalcredentialsdev/CMWallet/blob/f4aa9ebbeaf55fa3973b467701887464be3d4b51/app/src/main/assets/openid4vp.wasm).
 
@@ -342,7 +342,7 @@ reaches the picker.
 |  | iOS | Android |
 |---|---|---|
 | Where matching happens | in the OS | in the wasm matcher, in a sandbox |
-| What leaves the app | identifier, document type, trust gate, expiry | display metadata and claim values |
+| What leaves the app | identifier, document type, trust gate, expiry | display metadata, claim values, issuer and reader identifiers |
 | Matched on | document type | individual claims |
 | Formats | `mso_mdoc` with an [allowed document type](#supported-document-types) | anything the matcher supports |
 | Registered set | added to and removed from per credential | replaced on every call |
@@ -376,8 +376,35 @@ await registerCredentials({
 
 Values that are not valid base64 throw.
 
-Android has no equivalent, its matchers surface unsigned requests, and the wallet decides in the
-request UI.
+#### Trusting issuers and readers on Android
+
+The `multipaz` matcher has two gates of its own, set on the credential under `android`. Both take
+base64 X.509 authority key identifiers, like the iOS gate. The matcher only compares identifiers. It
+verifies no signature and no chain, so check what reaches the request UI there too.
+
+| Option | What it does |
+|---|---|
+| `issuerAuthorityKeyIdentifiers` | The authority key identifier of every certificate in the credential's issuer chain: the MSO's `x5chain` for an mdoc, the `x5c` header for an SD-JWT VC. A verifier can name the issuers it accepts, as `trusted_authorities` of type `aki` in DCQL or as `issuerIdentifiers` in an Annex C `deviceRequest`, and the matcher then only offers credentials carrying one of them. **A credential registered without these never matches such a request.** |
+| `supportedAuthorityKeyIdentifiers` | Reader gating, like `ios.supportedAuthorityKeyIdentifiers`. When set, the credential only matches requests whose reader certificate chain carries one of these: the `x5c` of a signed OpenID4VP request, or the `readerAuth` of a `deviceRequest`. Unsigned requests never match. |
+
+```ts
+await registerCredentials({
+  credentials: [
+    {
+      ...pid,
+      android: {
+        // Matches verifiers that only accept PIDs from this issuer.
+        issuerAuthorityKeyIdentifiers: ["N1OrmtAijM/4g9xcF7evzmkzXVs="],
+        // Only offered to readers the government signed for.
+        supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"],
+      },
+    },
+  ],
+});
+```
+
+The other matchers ignore `trusted_authorities`, so they have no use for the issuer identifiers. They
+cannot gate on the reader either, and registering `supportedAuthorityKeyIdentifiers` with them throws.
 
 #### Expiring a registration on iOS
 
@@ -456,7 +483,7 @@ bundle.
 The registered component gets `request: DcApiRequest`, a union on `platform`, since the platforms
 know different things at this point:
 
-- **Android** delivers the protocol requests with the picker result, along with the credential the
+- **Android** delivers the protocol requests with the picker result, along with the credentials the
   user chose. Nothing is parsed for you: read the OpenID4VP request or Annex C `deviceRequest` with
   whatever stack you already use.
 - **iOS** has no picker and holds the raw request back until you commit. Up front you get the request
@@ -470,8 +497,11 @@ type DcApiRequest =
       origin: string | undefined;
       callingPackage: string;
       requests: DcApiProtocolRequest[];
-      selectedCredentialId: string;
-      selectedRequestIndex: number;
+      selection?: {
+        credentialIds: string[];
+        requestIndex: number | undefined;
+        candidateRequestIndexes: number[];
+      };
       respond(options: DcApiResponseOptions): Promise<void>;
       decline(reason?: string): void;
     }
@@ -491,16 +521,15 @@ type DcApiRequest =
 | `origin` | both | WHATWG ASCII serialization of the requesting website origin, always from the OS. On Android it is `undefined` when a native app asked for itself. See [below](#when-there-is-no-origin). |
 | `callingPackage` | Android | The package that made the request, e.g. `com.android.chrome`. |
 | `requests` | Android | The [protocol requests](#protocol-requests) the verifier sent, in its order. Protocols this package does not know are left out, so this can be empty. |
-| `selectedCredentialId` | Android | The credential the user picked in the system picker, as passed to `registerCredentials`. |
-| `selectedRequestIndex` | Android | Index into `requests` for the entry the picked credential was matched against. See [the caveat](#the-picked-entry). |
+| `selection` | Android | What the user picked in the system picker: the credentials, and the request they were matched against. `undefined` when the request did not come through the picker. See [what was picked](#what-was-picked). |
 | `presentmentRequests` | iOS | [What the OS parsed](#the-parsed-request-ios) out of the request: documents, elements, and their `intentToRetain`. |
 | `readerAuthentications` | iOS | The reader authentications the request carried, each with its certificate chain as base64 DER. Empty when the request was not signed. |
 
 | Method | Platform | Behaviour |
 |---|---|---|
 | `approve()` | iOS | Commits to answering, and resolves with the protocol request the OS then releases. Always exactly one `org-iso-mdoc` request, in the same shape Android's `requests` has. Call it after the user approved. On iOS this is the point of no return. |
-| `respond({ protocol, data })` | both | Completes the request. See [responding](#responding). |
-| `decline(reason?)` | both | Declines. The reason is for logs, and the OS decides what the verifier sees. |
+| `respond({ protocol, data })` | both | Completes the request. See [responding](#responding). Rejects once the request was answered or declined. A response that failed can be retried, or declined. |
+| `decline(reason?)` | both | Declines. The reason is for logs, and the OS decides what the verifier sees. Does nothing once the request was answered or declined. |
 
 ##### Protocol requests
 
@@ -525,17 +554,56 @@ type DcApiProtocolRequest =
 Chrome is inconsistent about whether `data` arrives as a string or an object. Android normalizes it
 to the table above before it reaches JS. `org-iso-mdoc` is the only protocol iOS speaks.
 
-##### The picked entry
+##### What was picked
 
-`selectedRequestIndex` comes from the wasm matcher, and is mapped back onto `requests` after dropping
-unknown protocols, so it is always a valid index. It is only as good as the matcher's answer though,
-falling back to `0` when it cannot be mapped. If you answer more than one protocol, pick from `requests`
-yourself:
+`selection` is what the wasm matcher wrote into the picker entries the user chose. Its indexes are
+mapped back onto `requests` after unknown protocols are dropped.
 
 ```ts
-// e.g. prefer OpenID4VP when the verifier offered it, whatever the picker matched
-const openid4vp = request.requests.find((r) => r.protocol !== "org-iso-mdoc");
+type AndroidDcApiSelection = {
+  credentialIds: string[];
+  requestIndex: number | undefined;
+  candidateRequestIndexes: number[];
+};
 ```
+
+**Several credentials.** A request can ask for more than one credential at once: a DCQL query with
+several `credentials`, `credential_sets` whose options combine credentials, or an Annex C
+`deviceRequest` with several `docRequests`, optionally grouped by `deviceRequestInfo.useCases`. The
+`multipaz` matcher turns each way of answering into a set of credentials, with one slot per
+credential the request needs and a choice of credentials in each slot. An optional credential set
+shows up as separate options, with and without it. The user confirms one set, and `credentialIds`
+holds one credential per slot. This works the same for OpenID4VP, with SD-JWT VC or mdoc, and for
+`org-iso-mdoc`. Answer with all of them in one response: a `vp_token` entry per DCQL credential query,
+or a document per credential in the Annex C `DeviceResponse`.
+
+`credentialIds` is in the order the picker returns them, which is not necessarily the order of the
+query, and the matcher does not say which DCQL credential query each one answers. Match them against
+the request to find out. `ubique` and `cmwallet` only register single credentials, so with those
+`credentialIds` always has one entry.
+
+**The matched request.** `requestIndex` is the request the credentials were matched against, when
+the matcher's answer identifies one. `ubique` and `cmwallet` report the request itself. `multipaz`
+only reports the protocol: its entry ids are `<combination> <protocol> <credentialId>` and carry no
+request index. So when the verifier sent several requests with the same protocol, `requestIndex` is
+`undefined` and `candidateRequestIndexes` lists all of them. The matcher answers the first request
+the registered credentials can satisfy, so the one it matched is the first candidate the picked
+credentials satisfy:
+
+```ts
+function matchedRequestIndex({ requests, selection }: AndroidDcApiRequest) {
+  if (!selection) return undefined;
+
+  return (
+    selection.requestIndex ??
+    // `isSatisfiedBy` is your own DCQL or deviceRequest evaluation.
+    selection.candidateRequestIndexes.find((index) => isSatisfiedBy(requests[index], selection.credentialIds))
+  );
+}
+```
+
+`candidateRequestIndexes` is empty when the matched request uses a protocol this package does not
+know, since that request is not in `requests`.
 
 ##### The parsed request (iOS)
 
@@ -631,20 +699,28 @@ import { Button, View } from "react-native";
 export function MyCustomComponent({ request }: { request: DcApiRequest }) {
   const onShare = async () => {
     if (request.platform === "android") {
-      // The picker delivered the request and matched an entry against it.
-      const picked = request.requests[request.selectedRequestIndex];
+      // The picker delivered the request and matched credentials against it.
+      const { selection } = request;
+      if (!selection) return request.decline("the request did not come through the picker");
+
+      // See "What was picked" for `matchedRequestIndex`.
+      const index = matchedRequestIndex(request);
+      const picked = index === undefined ? undefined : request.requests[index];
       if (!picked) return request.decline("no protocol this wallet can answer");
+
+      // One credential per credential the request asks for, all answered in one response.
+      const { credentialIds } = selection;
 
       if (picked.protocol !== "org-iso-mdoc") {
         // An OpenID4VP authorization request, as a JSON string. Signed variants are a JWT —
         // verify them before rendering or answering anything they contain.
-        const authorizationResponse = await buildOpenid4vpResponse(picked.data, request.origin);
+        const authorizationResponse = await buildOpenid4vpResponse(picked.data, request.origin, credentialIds);
         return request.respond({ protocol: picked.protocol, data: authorizationResponse });
       }
 
       return request.respond({
         protocol: "org-iso-mdoc",
-        data: { response: await buildAnnexCResponse(picked.data, request.origin) },
+        data: { response: await buildAnnexCResponse(picked.data, request.origin, credentialIds) },
       });
     }
 
@@ -653,9 +729,11 @@ export function MyCustomComponent({ request }: { request: DcApiRequest }) {
     const [isoMdoc] = await request.approve();
     if (!isoMdoc) return request.decline("no protocol this wallet can answer");
 
+    // There is no picker on iOS: the credentials are the ones your own screen matched against
+    // `presentmentRequests`.
     return request.respond({
       protocol: "org-iso-mdoc",
-      data: { response: await buildAnnexCResponse(isoMdoc.data, request.origin) },
+      data: { response: await buildAnnexCResponse(isoMdoc.data, request.origin, chosenCredentialIds) },
     });
   };
 
@@ -699,9 +777,10 @@ so its font size multiplier is `0` and every font is sized to nothing. The syste
 its default size, so *only* text naming a `fontFamily` disappears, which looks like a font problem
 and is not one ([facebook/react-native#54642](https://github.com/facebook/react-native/issues/54642)).
 
-[`react-native+0.85.3.patch`](./patches/react-native+0.85.3.patch) reads the text size from the
+[`react-native+0.83.10.patch`](./patches/react-native+0.83.10.patch) reads the text size from the
 current trait collection instead, which an extension does get from its host, and clamps anything
-unusable to `1.0`. It patches React Core sources, so React Native has to be built from source too.
+unusable to `1.0`. The patched code is unchanged up to at least 0.85.3, so the patch applies as it is:
+rename it to your React Native version. It patches React Core sources, so React Native has to be built from source too.
 Against the prebuilt `React.xcframework` it is never compiled:
 
 ```json

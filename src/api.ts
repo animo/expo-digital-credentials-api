@@ -1,13 +1,13 @@
 import { Platform } from 'react-native'
+import { iosSupportedDocumentTypes } from './iosDocumentTypes'
 import { defaultMatcher, encodeCredentialsBase64, matcherProtocols } from './matchers'
 import nativeModule, { type IosDocumentRegistration, getNativeModule } from './nativeModule'
-import {
-  type DcApiCredential,
-  type DcApiMdocCredential,
-  type RegisterCredentialOptions,
-  type RegisterCredentialsOptions,
-  type RegistrationStatus,
-  iosSupportedDocumentTypes,
+import type {
+  DcApiCredential,
+  DcApiMdocCredential,
+  RegisterCredentialOptions,
+  RegisterCredentialsOptions,
+  RegistrationStatus,
 } from './types'
 import { DcApiUnsupportedError } from './util'
 
@@ -50,6 +50,14 @@ export async function getRegistrationStatus(): Promise<RegistrationStatus> {
  */
 export async function registerCredentials(options: RegisterCredentialsOptions): Promise<string[]> {
   const module = getNativeModule('registerCredentials')
+
+  // The picked credential is reported by its id — and on iOS the id is the key the OS stores the
+  // registration under — so two credentials sharing one could never be told apart.
+  const ids = new Set<string>()
+  for (const { id } of options.credentials) {
+    if (ids.has(id)) throw new TypeError(`Credential ids must be unique, but '${id}' is used more than once`)
+    ids.add(id)
+  }
 
   if (Platform.OS === 'ios') {
     const documentTypes = entitledDocumentTypes(module)

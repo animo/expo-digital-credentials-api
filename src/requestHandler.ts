@@ -19,6 +19,7 @@ export { getSharedContainerPath } from './api'
 export { default, registerDcApiScreen } from './registerScreen'
 export type {
   AndroidDcApiRequest,
+  AndroidDcApiSelection,
   DcApiCredential,
   DcApiProtocol,
   DcApiProtocolRequest,

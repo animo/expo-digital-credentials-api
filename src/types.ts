@@ -15,25 +15,6 @@ export type DcApiProtocol = (typeof dcApiProtocols)[number]
 
 export type Openid4vpProtocol = Exclude<DcApiProtocol, 'org-iso-mdoc'>
 
-/**
- * The document types Apple allows in the
- * `com.apple.developer.identity-document-services.document-provider.mobile-document-types`
- * entitlement.
- *
- * An app is entitled to the ones it lists there — the config plugin's `ios.documentTypes` — and
- * registering a document type outside that list is rejected by the OS, so
- * {@link registerCredentials} skips those credentials rather than sending them. This is the outer
- * bound of what can be configured, not what any one build registers.
- */
-export const iosSupportedDocumentTypes = [
-  'org.iso.18013.5.1.mDL',
-  'org.iso.23220.photoid.1',
-  'org.iso.23220.1.jp.mnc',
-  'eu.europa.ec.eudi.pid.1',
-  'eu.europa.ec.av.1',
-] as const
-export type IosSupportedDocumentType = (typeof iosSupportedDocumentTypes)[number]
-
 export interface Openid4vpProtocolRequest {
   protocol: Openid4vpProtocol
 
@@ -91,11 +72,16 @@ interface DcApiRequestActions<Response extends DcApiResponseOptions = DcApiRespo
    * This mirrors what the Digital Credentials API itself carries: the protocol — always stated,
    * never inferred, and it must be the one that was answered — and that protocol's response object,
    * which reaches the verifier as it is.
+   *
+   * A request is answered once: this rejects after the request was answered or declined. A response
+   * the platform refused does not count, so it can be retried, or the request declined.
    */
   respond(options: Response): Promise<void>
 
   /**
    * Decline the request. The reason is for logs only — the OS decides what the verifier sees.
+   *
+   * Does nothing once the request was answered or declined.
    */
   decline(reason?: string): void
 }
@@ -134,24 +120,57 @@ export interface AndroidDcApiRequest extends DcApiRequestActions {
   requests: DcApiProtocolRequest[]
 
   /**
-   * The credential the user picked in the system credential picker, as passed to
-   * {@link RegisterCredentialsOptions.credentials}.
+   * What the user picked in the system credential picker.
    *
    * Absent when the request never went through the picker — a caller can reach the wallet through
    * `identitycredentials.action.GET_CREDENTIALS`, where nothing was selected. The wallet then picks
-   * the credential itself, from {@link requests}, the way it has to on iOS.
+   * the credentials itself, from {@link requests}, the way it has to on iOS.
    */
-  selectedCredentialId?: string
+  selection?: AndroidDcApiSelection
+}
+
+/**
+ * The credentials the user picked in the Android credential picker, and the request they answer.
+ *
+ * The picker returns whatever the wasm matcher wrote into the entries, so this is only as precise as
+ * the matcher.
+ */
+export interface AndroidDcApiSelection {
+  /**
+   * The picked credentials, as passed to {@link RegisterCredentialsOptions.credentials}.
+   *
+   * More than one when the request asks for several credentials together, e.g. a DCQL query with
+   * two `credentials`, or `credential_sets` whose chosen option has several members, or an Annex C
+   * `deviceRequest` with several `docRequests`. The picker then shows them as one set and returns
+   * one credential per slot. Only the `multipaz` matcher builds sets; the others always return one.
+   *
+   * This is the order the picker returns them in, which is not necessarily the order of the query.
+   * Match each credential against the request to find the query it answers.
+   */
+  credentialIds: string[]
 
   /**
-   * Index into {@link requests}, identifying the request the picked entry was matched against.
+   * Index into {@link AndroidDcApiRequest.requests}: the request the credentials were matched
+   * against.
    *
-   * The picker returns whatever the wasm matcher wrote into the entry, so this is only as good as
-   * the matcher: when its answer cannot be mapped onto {@link requests} — an unknown protocol, an
-   * index past the end — it falls back to `0`. Wallets that can answer more than one protocol are
-   * better off picking from {@link requests} themselves.
+   * `undefined` when the matcher's answer does not identify a single request, see
+   * {@link candidateRequestIndexes}.
    */
-  selectedRequestIndex: number
+  requestIndex: number | undefined
+
+  /**
+   * Every request in {@link AndroidDcApiRequest.requests} the credentials may have been matched
+   * against, in order. {@link requestIndex} is set exactly when this has one entry.
+   *
+   * The `multipaz` matcher only reports the protocol it answered, so every request with that
+   * protocol is a candidate. The matcher answers the first request the registered credentials can
+   * satisfy, so of the candidates it is the first one the picked credentials satisfy: evaluate them
+   * in order. The `cmwallet` and `ubique` matchers report the request itself.
+   *
+   * Empty when the matched request uses a protocol this package does not know, and so was left out
+   * of the requests.
+   */
+  candidateRequestIndexes: number[]
 }
 
 /**
@@ -273,8 +292,8 @@ export type DcApiRequest = AndroidDcApiRequest | IosDcApiRequest
 export type DcApiMatcher = 'multipaz' | 'cmwallet' | 'ubique'
 
 /**
- * How the OS should treat one document. iOS only: Android registers a credential database its
- * matcher reads, and neither gate exists there.
+ * How the OS should treat one document. iOS only: Android's matcher has gates of its own, see
+ * {@link AndroidRegistrationOptions}.
  *
  * Set on {@link DcApiCredential.ios}, since Apple stores both with each document
  * ({@link https://developer.apple.com/documentation/identitydocumentservices/mobiledocumentregistration | `MobileDocumentRegistration`}).
@@ -292,8 +311,8 @@ export interface IosRegistrationOptions {
    *   authorities match. Everything else — including unsigned requests — never reaches the
    *   wallet, and the user sees no entry for it.
    *
-   * Android has no equivalent. Its matchers surface unsigned requests too, and trust decisions
-   * are made in the request UI, where the wallet has the full request.
+   * On Android, {@link AndroidRegistrationOptions.supportedAuthorityKeyIdentifiers} does the same
+   * with the `multipaz` matcher.
    */
   supportedAuthorityKeyIdentifiers?: string[]
 
@@ -447,6 +466,46 @@ export interface DcApiCredential {
    * Gates the OS applies to this credential while matching. iOS only, and ignored on Android.
    */
   ios?: IosRegistrationOptions
+
+  /**
+   * Gates the matcher applies to this credential while matching. Android only, and ignored on iOS.
+   */
+  android?: AndroidRegistrationOptions
+}
+
+/**
+ * How the Android matcher should treat one credential. Only the `multipaz` matcher reads these.
+ *
+ * Both take the base64 encoding of X.509 authority key identifiers, as
+ * {@link IosRegistrationOptions.supportedAuthorityKeyIdentifiers} does. The matcher only compares
+ * identifiers: it verifies no signature and no chain, so what it lets through still has to be
+ * checked in the request UI.
+ */
+export interface AndroidRegistrationOptions {
+  /**
+   * The authority key identifier of every certificate in the credential's issuer chain: the MSO's
+   * `x5chain` for an mdoc, the `x5c` header for an SD-JWT VC.
+   *
+   * A verifier can name the issuers it accepts, as `trusted_authorities` of type `aki` in a DCQL
+   * credential query or as `issuerIdentifiers` in an Annex C `deviceRequest`. The matcher then only
+   * offers credentials carrying one of those identifiers, so a credential registered without them
+   * never matches such a request. Requests that name no issuers match either way.
+   */
+  issuerAuthorityKeyIdentifiers?: string[]
+
+  /**
+   * Reader-auth gating, the Android counterpart of
+   * {@link IosRegistrationOptions.supportedAuthorityKeyIdentifiers}.
+   *
+   * - **Empty (the default).** Every request matches, signed or not.
+   * - **Non-empty.** Only requests whose reader certificate chain carries one of these authority
+   *   key identifiers match: the `x5c` of a signed OpenID4VP request, or the `readerAuth` of an
+   *   Annex C `deviceRequest`. Unsigned requests never match, and the user sees no entry for them.
+   *
+   * Registering these with any matcher other than `multipaz` throws, since it would silently offer
+   * the credential to every reader.
+   */
+  supportedAuthorityKeyIdentifiers?: string[]
 }
 
 /**

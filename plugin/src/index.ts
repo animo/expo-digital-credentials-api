@@ -1,9 +1,11 @@
+import path from 'node:path'
 import { type ConfigPlugin, createRunOncePlugin, withPlugins } from 'expo/config-plugins'
 import { withAndroidDcApiBundle } from './android/withDcApiBundle'
 import { withAppEntitlements } from './ios/withEntitlements'
 import { withExtensionFiles } from './ios/withExtensionFiles'
 import { withExtensionPodfile } from './ios/withExtensionPodfile'
 import { withExtensionTarget } from './ios/withExtensionTarget'
+import { packageRoot } from './packageRoot'
 import {
   type DigitalCredentialsApiPluginOptions,
   extensionTargetName,
@@ -12,7 +14,7 @@ import {
   getKeychainAccessGroup,
 } from './types'
 
-const pkg = require('../../package.json')
+const pkg = require(path.join(packageRoot, 'package.json'))
 
 /**
  * Tell EAS Build to provision a profile for the extension target. Without this the build fails on

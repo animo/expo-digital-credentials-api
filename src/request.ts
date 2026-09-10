@@ -1,9 +1,9 @@
-import { parseSelectedEntry } from './matchers'
+import { parseSelection } from './matchers'
 import { getNativeModule } from './nativeModule'
 import {
   type AndroidDcApiRequest,
+  type AndroidDcApiSelection,
   type DcApiMatcher,
-  type DcApiProtocol,
   type DcApiProtocolRequest,
   type DcApiRequest,
   type DcApiResponseOptions,
@@ -33,10 +33,11 @@ type NativeRequest =
        */
       requests: Array<{ protocol: string; data: unknown }>
       /**
-       * Matcher-specific, see {@link parseSelectedEntry}. Null when the request did not come from
-       * the credential picker, which only the registry action goes through.
+       * Matcher-specific, see {@link parseSelection}: one entry, or one per slot of a picked set.
+       * Null when the request did not come from the credential picker, which only the registry
+       * action goes through.
        */
-      selectedEntryId: string | null
+      selectedEntryIds: string[] | null
       matcher: DcApiMatcher
     }
   | {
@@ -54,14 +55,31 @@ type NativeRequest =
 export function parseRequest(raw: string | NativeRequest): DcApiRequest {
   const native: NativeRequest = typeof raw === 'string' ? JSON.parse(raw) : raw
 
+  // A request is answered once. Past that the platform is done with it: a second answer reaches an
+  // activity that is already finishing on Android, and a session that is gone on iOS.
+  let answered = false
+
   const actions = {
     // The protocol and its response object are what the Digital Credentials API carries, so they go
     // to native as they are — neither platform re-wraps or adds to them.
     async respond({ protocol, data }: DcApiResponseOptions): Promise<void> {
-      await getNativeModule('respond').sendResponse(JSON.stringify({ protocol, data }))
+      if (answered) throw new Error('The request was already answered')
+
+      // Taken before the call, so a second `respond` while the first is in flight is refused too —
+      // and given back if the first fails, so the wallet can still answer, or decline.
+      answered = true
+      try {
+        await getNativeModule('respond').sendResponse(JSON.stringify({ protocol, data }))
+      } catch (error) {
+        answered = false
+        throw error
+      }
     },
 
     decline(reason?: string): void {
+      if (answered) return
+      answered = true
+
       getNativeModule('decline').sendErrorResponse(reason ?? 'The request was declined')
     },
   }
@@ -91,29 +109,42 @@ export function parseRequest(raw: string | NativeRequest): DcApiRequest {
       (dcApiProtocols as readonly string[]).includes(entry.request.protocol)
     )
 
-  // Absent when nothing was picked — see `AndroidDcApiRequest.selectedCredentialId`.
-  const selected = native.selectedEntryId
-    ? parseSelectedEntry(
-        native.matcher,
-        native.selectedEntryId,
-        (native.requests ?? []).map((request) => request.protocol as DcApiProtocol)
-      )
-    : undefined
-
   return {
     platform: 'android',
     // Kept as an absent value, never as an empty string: see `AndroidDcApiRequest.origin`.
     origin: native.origin ?? undefined,
     callingPackage: native.callingPackage,
     requests: supported.map((entry) => entry.request),
-    selectedCredentialId: selected?.credentialId,
-    // The matcher answers in the verifier's index space; the wallet gets ours.
-    selectedRequestIndex: selected
-      ? Math.max(
-          supported.findIndex((entry) => entry.index === selected.requestIndex),
-          0
-        )
-      : 0,
+    selection: parseAndroidSelection(native, supported),
     ...actions,
   } satisfies AndroidDcApiRequest
+}
+
+/**
+ * Absent when nothing was picked — see `AndroidDcApiRequest.selection`.
+ */
+function parseAndroidSelection(
+  native: Extract<NativeRequest, { platform: 'android' }>,
+  supported: Array<{ index: number }>
+): AndroidDcApiSelection | undefined {
+  if (!native.selectedEntryIds?.length) return undefined
+
+  const selected = parseSelection(
+    native.matcher,
+    native.selectedEntryIds,
+    (native.requests ?? []).map((request) => request.protocol)
+  )
+
+  // The matcher answers in the verifier's index space; the wallet gets ours. A request that was
+  // dropped is not one the wallet can answer, so it is no candidate either.
+  const candidateRequestIndexes = selected.requestIndexes.flatMap((verifierIndex) => {
+    const index = supported.findIndex((entry) => entry.index === verifierIndex)
+    return index === -1 ? [] : [index]
+  })
+
+  return {
+    credentialIds: selected.credentialIds,
+    requestIndex: candidateRequestIndexes.length === 1 ? candidateRequestIndexes[0] : undefined,
+    candidateRequestIndexes,
+  }
 }
