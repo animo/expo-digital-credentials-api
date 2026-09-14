@@ -25,5 +25,11 @@
     "autolinking": {
       "nativeModulesDir": ".."
     }
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.23": "^8.5.23",
+      "@xmldom/xmldom@<0.8.15": "^0.8.15"
+    }
   }
 }
