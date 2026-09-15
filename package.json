@@ -63,7 +63,7 @@
     "expo": "~55.0.0",
     "expo-module-scripts": "~55.0.2",
     "react-native": "0.83.10",
-    "release-it": "^17.4.1",
+    "release-it": "^21.0.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },
