@@ -76,6 +76,9 @@ export const withExtensionFiles: ConfigPlugin<DigitalCredentialsApiPluginOptions
         // separate bundle: an app pinned to light would otherwise get a request UI that follows the
         // device, down to the sheet's own title bar turning dark around a light screen.
         ...userInterfaceStyle(config, options),
+        // App Store Connect rejects an upload whose appex has no display name, and the generated
+        // Info.plist does not add one.
+        CFBundleDisplayName: config.name,
       }
 
       fs.writeFileSync(infoPlistPath, plist.build(infoPlist))
