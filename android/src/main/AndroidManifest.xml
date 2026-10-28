@@ -1,7 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <!-- A process of its own, like the iOS extension: React Native supports a second host in a
+             process, but Expo and native modules keep process-wide state for the one the app runs. -->
         <activity
             android:name=".DigitalCredentialsApiActivity"
+            android:process=":dcapi"
             android:theme="@style/Theme.Transparent"
             android:windowSoftInputMode="adjustResize"
             android:exported="true"
