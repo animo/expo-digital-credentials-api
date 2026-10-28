@@ -449,7 +449,10 @@ Moving an existing database there needs care:
   a transaction open across the user's decision.
 - The path changes across reinstalls, so store the file name rather than the absolute path.
 
-`getSharedContainerPath()` throws on Android, where the request UI already shares the app's sandbox.
+On Android the request UI also runs in its own process, `<your package>:dcapi`. That process lives in
+the app's sandbox, so the default locations work and `getSharedContainerPath()` throws there. The app
+and the request UI still open the same files from two processes, so the rules above apply on Android
+too. Key-value stores need their multi-process mode, such as MMKV's `mode: 'multi-process'`.
 
 ### Handling a credential request
 
@@ -474,9 +477,12 @@ export default registerDcApiScreen(MyCustomComponent);
 Platform variants resolve as usual. Add `dc-api/index.ios.tsx` or `dc-api/index.android.tsx` for a
 different component per platform, or point the plugin's `entry` option elsewhere.
 
-Keep the app's own entry (`index.ts`, or the Expo Router root) out of this file: it runs in the
-provider extension on iOS and in the picker's activity on Android, neither of which loads the app
-bundle.
+Keep the app's own entry (`index.ts`, or the Expo Router root) out of this file. The request UI runs
+in a process of its own on both platforms (the provider extension on iOS, the picker's activity on
+Android), and neither loads the app bundle.
+
+`expo-updates` is not available under this entry on either platform, whether or not the app uses it.
+The request UI always runs the bundle it was built with, so it has nothing to update.
 
 #### Handling the request
 
@@ -688,6 +694,10 @@ The types enforce which protocols you can answer: Android's `respond` takes eith
 `org-iso-mdoc`, so an un-narrowed `DcApiRequest` does too. Narrow on `platform` before answering
 OpenID4VP.
 
+Answering or declining closes the request UI. On Android its process ends with it, which cuts off
+anything still running. Write what you need to keep, such as an activity log entry, before you call
+`respond()` or `decline()`.
+
 ##### Putting it together
 
 Answering both protocols, on both platforms.
@@ -766,8 +776,8 @@ your UI is shown.
 
 ## Known issues
 
-Two upstream bugs affect the request UI. Both are fixed by patches in [`patches/`](./patches). Copy
-the file into your project and apply it with pnpm's `patchedDependencies`, or with
+One upstream bug affects the request UI, and a patch in [`patches/`](./patches) fixes it. Copy the
+file into your project and apply it with pnpm's `patchedDependencies`, or with
 [`patch-package`](https://github.com/ds300/patch-package), which matches on the file name.
 
 ### Text with a `fontFamily` is invisible on iOS
@@ -786,30 +796,6 @@ Against the prebuilt `React.xcframework` it is never compiled:
 ```json
 ["expo-build-properties", { "ios": { "buildReactNativeFromSource": true } }]
 ```
-
-### Keychain reads fail in the request UI on Android
-
-Reads fail with `There are multiple DataStores active for the same file` while the same call works
-in the app. Android runs the request UI on a second React host in the app's process, so every
-autolinked module is instantiated twice. Since 9.2.0 `react-native-keychain` builds its `DataStore`
-per instance, so the second host opens a second store over the same file. Your storage layer usually
-wraps this in an error of its own, so read the real cause from `adb logcat`.
-
-[`react-native-keychain+10.0.0.patch`](./patches/react-native-keychain+10.0.0.patch) moves the store
-to file level with a process-owned scope. Upstream:
-[#777](https://github.com/oblador/react-native-keychain/issues/777),
-[#784](https://github.com/oblador/react-native-keychain/issues/784),
-[#801](https://github.com/oblador/react-native-keychain/issues/801). The open fix in
-[#793](https://github.com/oblador/react-native-keychain/pull/793) keeps the module-owned scope, so
-the first module invalidated still takes the shared store down. Unreleased since 10.0.0.
-
-iOS needs no patch: separate process, keychain items reached through `ios.keychainAccessGroup`.
-Link the package into the extension either way.
-
-> [!NOTE]
-> Nothing here is specific to `react-native-keychain`. Any native module holding a process-wide
-> resource keyed by file or name breaks the same way on Android: it works in the app and fails only
-> in the request UI.
 
 ## Contributing
 

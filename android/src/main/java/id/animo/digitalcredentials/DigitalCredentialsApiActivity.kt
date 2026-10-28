@@ -1,9 +1,14 @@
 package id.animo.digitalcredentials
 
+import android.app.ActivityManager
+import android.app.Application
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.view.KeyEvent
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
@@ -109,6 +114,27 @@ class DigitalCredentialsApiActivity : AppCompatActivity(), DefaultHardwareBackBt
         if (::reactDelegate.isInitialized) {
             reactDelegate.onHostDestroy()
         }
+
+        // The process exists for this request alone, so it ends with it rather than staying cached
+        // with a React host in memory. Anything the request UI still runs after answering is cut
+        // off. Not when the activity is only recreated, and never in the app's own process, should a
+        // manifest merge have dropped `android:process`.
+        if (isFinishing && !isChangingConfigurations && isRequestProcess()) {
+            Handler(Looper.getMainLooper()).post { Process.killProcess(Process.myPid()) }
+        }
+    }
+
+    private fun isRequestProcess(): Boolean {
+        val processName =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    Application.getProcessName()
+                } else {
+                    (getSystemService(ACTIVITY_SERVICE) as ActivityManager)
+                            .runningAppProcesses
+                            ?.firstOrNull { it.pid == Process.myPid() }
+                            ?.processName
+                }
+        return processName != null && processName != packageName
     }
 
     @Suppress("DEPRECATION")

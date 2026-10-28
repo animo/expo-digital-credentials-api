@@ -92,7 +92,7 @@ export type DigitalCredentialsApiPluginOptions = {
      *
      * A `fontFamily` still names the font's PostScript name (`OpenSans-Regular`), not the file.
      *
-     * Android needs nothing here: the request UI runs in the app's own process, with its fonts.
+     * Android needs nothing here: the request UI runs from the app's own APK, with its fonts.
      */
     fonts?: string[]
 

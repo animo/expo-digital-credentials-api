@@ -70,6 +70,9 @@ androidComponents {
                     "--platform", "android",
                     "--dev", "false",
                     "--entry-file", "${entryFile}",
+                    // Hermes bytecode, like the app's bundle: Hermes maps it in place, where plain JS
+                    // is parsed in memory on every start.
+                    "--bytecode",
                     "--bundle-output", new File(jsBundleDir.get().asFile, "${bundleAsset}").absolutePath,
                     "--assets-dest", resourcesDir.get().asFile.absolutePath
                 ])
