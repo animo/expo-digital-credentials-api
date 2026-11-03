@@ -1,9 +1,9 @@
 /**
  * Just enough CBOR to write the Multipaz matcher's credential database: text strings, byte strings,
- * arrays and text-keyed maps. The matcher looks members up by key, so no canonical ordering is
+ * booleans, arrays and text-keyed maps. The matcher looks members up by key, so no canonical ordering is
  * needed, and no other major types occur in the format.
  */
-export type CborValue = string | Uint8Array | CborValue[] | { [key: string]: CborValue }
+export type CborValue = string | Uint8Array | boolean | CborValue[] | { [key: string]: CborValue }
 
 const majorByteString = 2
 const majorTextString = 3
@@ -30,6 +30,11 @@ function write(chunks: Uint8Array[], value: CborValue) {
   if (typeof value === 'string') {
     const bytes = new TextEncoder().encode(value)
     chunks.push(head(majorTextString, bytes.length), bytes)
+    return
+  }
+
+  if (typeof value === 'boolean') {
+    chunks.push(Uint8Array.of(value ? 0xf5 : 0xf4))
     return
   }
 

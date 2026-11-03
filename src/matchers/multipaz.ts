@@ -12,10 +12,12 @@ import type { ParsedSelection } from './index'
  *   "credentials": [{
  *     "title": tstr, "subtitle": tstr, "bitmap": bstr,
  *     "protocols": [tstr],                                  ; optional, overrides the top level
+ *     "transactionDataTypes": [tstr],                       ; optional, our fork only (matcher/)
+ *     "transactionDataOnly": bool,                          ; optional, our fork only
  *     "mdoc":  { "documentId": tstr, "docType": tstr,
  *                "issuerIdentifiers": [bstr], "readerIdentifiers": [bstr],   ; optional
  *                "namespaces": { ns: { element: [display, value, matchValue] } } },
- *     "sdjwt": { "documentId": tstr, "vct": tstr,
+ *     "sdjwt": { "documentId": tstr, "vct": tstr, "extendedVcts": [tstr],   ; optional, our fork only
  *                "issuerIdentifiers": [bstr], "readerIdentifiers": [bstr],   ; optional
  *                "claims": { "a.b.c": [display, value, matchValue] } }
  *   }]
@@ -34,10 +36,16 @@ export function encodeMultipazCredentials(credentials: DcApiCredential[], protoc
 }
 
 function encodeCredential({ id, display, credential, android }: DcApiCredential): CborValue {
-  const common = {
+  const common: { [key: string]: CborValue } = {
     title: display.title,
     subtitle: display.subtitle ?? '',
     bitmap: decodeIcon(display.iconDataUrl),
+  }
+  if (android?.transactionDataTypes?.length) {
+    common.transactionDataTypes = android.transactionDataTypes
+  }
+  if (android?.transactionDataOnly) {
+    common.transactionDataOnly = true
   }
 
   const identifiers: CborValue = {}
@@ -70,6 +78,7 @@ function encodeCredential({ id, display, credential, android }: DcApiCredential)
     sdjwt: {
       documentId: id,
       vct: credential.vct,
+      ...(credential.extendedVcts?.length ? { extendedVcts: credential.extendedVcts } : {}),
       ...identifiers,
       claims: sdJwtClaims(credential.claims, display, []),
     },

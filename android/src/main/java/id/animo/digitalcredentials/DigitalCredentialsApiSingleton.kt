@@ -25,13 +25,10 @@ import java.lang.ref.WeakReference
 enum class Matcher(val identifier: String, val asset: String) {
 
     /**
-     * The matcher from https://github.com/openwallet-foundation/multipaz
-     * (`multipaz-dcapi/src/androidMain/assets/identitycredentialmatcher.wasm`, Apache-2.0).
+     * The matcher from https://github.com/openwallet-foundation/multipaz (Apache-2.0), built from
+     * our copy in `matcher/`, which adds payments. See `matcher/README.md`.
      *
      * The only bundled matcher that answers `org-iso-mdoc` requests, and the default.
-     *
-     * Current version:
-     * https://github.com/openwallet-foundation/multipaz/blob/1b045d0e/multipaz-dcapi/src/androidMain/assets/identitycredentialmatcher.wasm
      */
     MULTIPAZ("multipaz", "multipaz-matcher.wasm"),
 

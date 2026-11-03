@@ -21,6 +21,8 @@ interface PickerEntry {
   title: string
   /** `[displayName, value]` of every field the entry shows. */
   fields: Array<[string, string]>
+  /** Set for a payment entry, whose title is the payment method. */
+  payment?: { merchantName: string; amount: string }
 }
 
 interface PickerSet {
@@ -29,7 +31,14 @@ interface PickerSet {
   slots: PickerEntry[][]
 }
 
-function runMatcher(credentials: DcApiCredential[], requests: Array<{ protocol: string; data: unknown }>) {
+/**
+ * Runtime version 1 has no sets: its entries come back as the one slot of a set with an empty id.
+ */
+function runMatcher(
+  credentials: DcApiCredential[],
+  requests: Array<{ protocol: string; data: unknown }>,
+  { wasmVersion = 2 }: { wasmVersion?: 1 | 2 } = {}
+) {
   const database = encodeMultipazCredentials(credentials, [
     'openid4vp-v1-unsigned',
     'openid4vp-v1-signed',
@@ -39,6 +48,7 @@ function runMatcher(credentials: DcApiCredential[], requests: Array<{ protocol: 
   const request = new TextEncoder().encode(`${JSON.stringify({ requests })}\0`)
 
   const sets = new Map<string, PickerSet>()
+  const unsetEntries: PickerEntry[] = []
   // Filled in once the instance exists, which is before any host function runs.
   const wasm: { memory?: WebAssembly.Memory } = {}
   const bytes = () => new Uint8Array((wasm.memory as WebAssembly.Memory).buffer)
@@ -57,7 +67,7 @@ function runMatcher(credentials: DcApiCredential[], requests: Array<{ protocol: 
 
   const imports = {
     credman: {
-      GetWasmVersion: (pointer: number) => view().setUint32(pointer, 2, true),
+      GetWasmVersion: (pointer: number) => view().setUint32(pointer, wasmVersion, true),
       GetCallingAppInfo: (pointer: number) => bytes().fill(0, pointer, pointer + 256 + 512),
       GetCredentialsSize: (pointer: number) => view().setUint32(pointer, database.length, true),
       ReadCredentialsBuffer: (buffer: number, offset: number, length: number) => {
@@ -66,11 +76,24 @@ function runMatcher(credentials: DcApiCredential[], requests: Array<{ protocol: 
       },
       GetRequestSize: (pointer: number) => view().setUint32(pointer, request.length, true),
       GetRequestBuffer: (buffer: number) => bytes().set(request, buffer),
-      AddStringIdEntry: () => {
-        throw new Error('Runtime version 2 should only produce sets')
+      AddStringIdEntry: (credId: number, _icon: number, _iconLength: number, title: number) => {
+        if (wasmVersion === 2) throw new Error('Runtime version 2 should only produce sets')
+        unsetEntries.push({ entryId: string(credId), title: string(title), fields: [] })
       },
-      AddFieldForStringIdEntry: () => {
-        throw new Error('Runtime version 2 should only produce sets')
+      AddFieldForStringIdEntry: (credId: number, name: number, value: number) => {
+        if (wasmVersion === 2) throw new Error('Runtime version 2 should only produce sets')
+        unsetEntries
+          .find((candidate) => candidate.entryId === string(credId))
+          ?.fields.push([string(name), string(value)])
+      },
+      AddPaymentEntry: (credId: number, merchantName: number, paymentMethodName: number, ...rest: number[]) => {
+        if (wasmVersion === 2) throw new Error('Runtime version 2 should only produce sets')
+        unsetEntries.push({
+          entryId: string(credId),
+          title: string(paymentMethodName),
+          fields: [],
+          payment: { merchantName: string(merchantName), amount: string(rest[3] as number) },
+        })
       },
     },
     credman_v2: {
@@ -95,6 +118,29 @@ function runMatcher(credentials: DcApiCredential[], requests: Array<{ protocol: 
         const target = entry(setId, setIndex).find((candidate) => candidate.entryId === string(credId))
         target?.fields.push([string(name), string(value)])
       },
+      AddPaymentEntryToSet: (
+        credId: number,
+        merchantName: number,
+        paymentMethodName: number,
+        _paymentMethodSubtitle: number,
+        _icon: number,
+        _iconLength: number,
+        amount: number,
+        _bankIcon: number,
+        _bankIconLength: number,
+        _providerIcon: number,
+        _providerIconLength: number,
+        _metadata: number,
+        setId: number,
+        setIndex: number
+      ) => {
+        entry(setId, setIndex).push({
+          entryId: string(credId),
+          title: string(paymentMethodName),
+          fields: [],
+          payment: { merchantName: string(merchantName), amount: string(amount) },
+        })
+      },
     },
     // Only reached for the matcher's own logging, which goes nowhere here.
     wasi_snapshot_preview1: {
@@ -117,6 +163,7 @@ function runMatcher(credentials: DcApiCredential[], requests: Array<{ protocol: 
   wasm.memory = instance.exports.memory as WebAssembly.Memory
   ;(instance.exports._start as () => void)()
 
+  if (wasmVersion === 1) return unsetEntries.length ? [{ setId: '', slots: [unsetEntries] }] : []
   return [...sets.values()]
 }
 
@@ -349,6 +396,151 @@ function itemsRequest(docType: string, nameSpaces: Record<string, Record<string,
 /**
  * Just enough CBOR for a DeviceRequest: the credential database encoder has no booleans or integers.
  */
+describe('extended vcts', () => {
+  const debitCard: DcApiCredential = {
+    id: 'debit-1',
+    display: { title: 'Debit card' },
+    credential: {
+      format: 'dc+sd-jwt',
+      vct: 'https://bank.example/debit-card',
+      extendedVcts: ['https://wero.example/payment_attestation/v1'],
+      claims: { category: 'debit' },
+    },
+  }
+
+  const query = (vct: string) =>
+    openid4vp({
+      credentials: [{ id: 'card', format: 'dc+sd-jwt', meta: { vct_values: [vct] }, claims: [{ path: ['category'] }] }],
+    })
+
+  test('a request for a vct the credential type extends matches it', () => {
+    const [set] = runMatcher([debitCard], [query('https://wero.example/payment_attestation/v1')])
+    expect(set?.slots[0]?.[0]?.entryId).toBe('0 openid4vp-v1-unsigned debit-1')
+  })
+
+  test('a request for its own vct still matches it, and an unrelated vct does not', () => {
+    expect(runMatcher([debitCard], [query('https://bank.example/debit-card')])).toHaveLength(1)
+    expect(runMatcher([debitCard], [query('https://other.example/card')])).toEqual([])
+  })
+})
+
+describe('payments', () => {
+  const pasoType = 'urn:paso:sca:global:payment:1'
+  const ts12Type = 'urn:eudi:sca:eu.europa.ec:payment:single:1'
+
+  const card: DcApiCredential = {
+    id: 'card-1',
+    display: { title: 'Visa •••• 1234', claims: [{ path: ['card_holder'], displayName: 'Card holder' }] },
+    credential: { format: 'dc+sd-jwt', vct: 'https://bank.example/card', claims: { card_holder: 'Timo' } },
+    android: { transactionDataTypes: [pasoType, ts12Type], transactionDataOnly: true },
+  }
+
+  const cardQuery = {
+    id: 'card',
+    format: 'dc+sd-jwt',
+    meta: { vct_values: ['https://bank.example/card'] },
+    claims: [{ path: ['card_holder'] }],
+  }
+
+  const transactionData = (type: string, credentialIds = ['card']) =>
+    base64Url(
+      new TextEncoder().encode(
+        JSON.stringify({
+          type,
+          credential_ids: credentialIds,
+          payload: { amount: '49.99 EUR', payee: { name: 'Shop' } },
+        })
+      )
+    )
+
+  const payment = (type: string, transactions = [transactionData(type)], queries: unknown[] = [cardQuery]) => ({
+    protocol: 'openid4vp-v1-unsigned',
+    data: { dcql_query: { credentials: queries }, transaction_data: transactions },
+  })
+
+  const paymentEntry = {
+    entryId: '0 openid4vp-v1-unsigned card-1',
+    title: 'Visa •••• 1234',
+    fields: [],
+    payment: { merchantName: 'Shop', amount: '49.99 €' },
+  }
+
+  test.each([pasoType, ts12Type])('shows a %s payment with the card as the payment method', (type) => {
+    const sets = runMatcher([card, pid], [payment(type)])
+
+    expect(sets).toEqual([{ setId: '0 openid4vp-v1-unsigned', slots: [[paymentEntry]] }])
+    expect(parseMultipazSelection(pick(sets[0] as PickerSet), ['openid4vp-v1-unsigned'])).toEqual({
+      credentialIds: ['card-1'],
+      requestIndexes: [0],
+    })
+  })
+
+  test('falls back to a single payment entry on runtime version 1', () => {
+    expect(runMatcher([card], [payment(pasoType)], { wasmVersion: 1 })).toEqual([
+      { setId: '', slots: [[paymentEntry]] },
+    ])
+  })
+
+  test('a gated card never matches a request without transaction data', () => {
+    expect(runMatcher([card], [openid4vp({ credentials: [cardQuery] })])).toEqual([])
+  })
+
+  test('a card without transactionDataOnly also matches a request without transaction data', () => {
+    const authorizer = { ...card, android: { transactionDataTypes: [pasoType] } }
+
+    expect(runMatcher([authorizer], [openid4vp({ credentials: [cardQuery] })])).toHaveLength(1)
+    expect(runMatcher([authorizer], [payment(pasoType)])).toEqual([
+      { setId: '0 openid4vp-v1-unsigned', slots: [[paymentEntry]] },
+    ])
+  })
+
+  test('a gated card never matches transaction data of a type it does not list', () => {
+    expect(runMatcher([card], [payment('urn:example:other:1')])).toEqual([])
+    expect(
+      runMatcher([card], [payment(pasoType, [transactionData(pasoType), transactionData('urn:example:other:1')])])
+    ).toEqual([])
+  })
+
+  test('a request with transaction data it cannot read matches nothing', () => {
+    expect(runMatcher([card], [payment(pasoType, ['not base64url json'])])).toEqual([])
+    expect(runMatcher([card], [payment(pasoType, [transactionData(pasoType), 'not base64url json'])])).toEqual([])
+    expect(runMatcher([card, pid], [payment(pasoType, [], [cardQuery, pidQuery])])).toEqual([])
+    expect(runMatcher([card], [payment(pasoType, [transactionData(pasoType, [])])])).toEqual([])
+  })
+
+  test('a request with transaction data naming no credential query matches nothing', () => {
+    expect(
+      runMatcher(
+        [card, pid],
+        [payment(pasoType, [transactionData(pasoType, ['card', 'other'])], [cardQuery, pidQuery])]
+      )
+    ).toEqual([])
+  })
+
+  test('two payments for one card get the regular entry', () => {
+    const [set] = runMatcher([card], [payment(pasoType, [transactionData(pasoType), transactionData(ts12Type)])])
+
+    expect(set?.slots).toEqual([
+      [{ entryId: '0 openid4vp-v1-unsigned card-1', title: 'Visa •••• 1234', fields: [['Card holder', 'Timo']] }],
+    ])
+  })
+
+  test('credentials without transaction data types never match a query carrying transaction data', () => {
+    expect(
+      runMatcher([card, pid], [payment(pasoType, [transactionData(pasoType, ['card', 'pid'])], [cardQuery, pidQuery])])
+    ).toEqual([])
+  })
+
+  test('credentials without transaction data types match the other queries, next to the payment', () => {
+    const [set] = runMatcher([card, pid], [payment(pasoType, [transactionData(pasoType)], [cardQuery, pidQuery])])
+
+    expect(set?.slots).toEqual([
+      [paymentEntry],
+      [{ entryId: '0 openid4vp-v1-unsigned pid 1', title: 'PID', fields: [['Resident City', 'Utrecht']] }],
+    ])
+  })
+})
+
 type TestCbor = string | number | boolean | Uint8Array | TestCbor[] | { [key: string]: TestCbor }
 
 function cbor(value: TestCbor): Uint8Array {

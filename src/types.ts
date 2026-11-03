@@ -445,6 +445,13 @@ export interface DcApiSdJwtCredential {
   vct: string
 
   /**
+   * The vcts the credential's type extends, from the `extends` chain of its type metadata. A request
+   * for one of them matches the credential too, as it would when the wallet resolves the request
+   * itself. Only the `multipaz` matcher reads this.
+   */
+  extendedVcts?: string[]
+
+  /**
    * The decoded claims of the SD-JWT DC, including the resolved disclosures.
    */
   claims: SdJwtClaims
@@ -506,6 +513,32 @@ export interface AndroidRegistrationOptions {
    * the credential to every reader.
    */
   supportedAuthorityKeyIdentifiers?: string[]
+
+  /**
+   * The OpenID4VP `transaction_data` types the credential can authorize, such as
+   * `urn:paso:sca:global:payment:1`.
+   *
+   * A credential query that `transaction_data` entries name in their `credential_ids` only matches
+   * credentials that list the type of every one of them. Without types (the default), the credential
+   * only matches the other queries.
+   *
+   * A matched payment of type `urn:paso:sca:global:payment:1` or
+   * `urn:eudi:sca:eu.europa.ec:payment:single:1` is shown as a payment in the picker: the payee and
+   * the amount from the payload, with the credential as the payment method. The matcher only reads
+   * the request, so the transaction still has to be validated and shown in the request UI.
+   *
+   * Registering these with any matcher other than `multipaz` throws, since it ignores transaction data.
+   */
+  transactionDataTypes?: string[]
+
+  /**
+   * Only match credential queries carrying transaction data, so a payment card is not offered for a
+   * request that only asks for its claims. Requires `transactionDataTypes`. Defaults to `false`.
+   *
+   * Registering this with any matcher other than `multipaz` throws, since it would offer the
+   * credential to every request.
+   */
+  transactionDataOnly?: boolean
 }
 
 /**

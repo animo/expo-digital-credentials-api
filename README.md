@@ -309,7 +309,7 @@ against the request.
 | `cmwallet` | `openid4vp` | ❌ | ❌ | ❌ | ✅ |
 
 All three support SD-JWT VC and mdoc, signed and unsigned. Sources:
-[multipaz](https://github.com/openwallet-foundation/multipaz/tree/1b045d0e/multipaz-dcapi/src/androidMain/matcher) (Apache-2.0),
+[multipaz](matcher/README.md) (Apache-2.0, our copy with payment support),
 [oid4vp-wasm-matcher](https://github.com/UbiqueInnovation/oid4vp-wasm-matcher/releases/tag/v0.1.0),
 [CMWallet](https://github.com/digitalcredentialsdev/CMWallet/blob/f4aa9ebbeaf55fa3973b467701887464be3d4b51/app/src/main/assets/openid4vp.wasm).
 
@@ -405,6 +405,35 @@ await registerCredentials({
 
 The other matchers ignore `trusted_authorities`, so they have no use for the issuer identifiers. They
 cannot gate on the reader either, and registering `supportedAuthorityKeyIdentifiers` with them throws.
+
+#### Payments on Android
+
+Set `android.transactionDataTypes` on a credential to the OpenID4VP `transaction_data` types it can
+authorize. Only the `multipaz` matcher supports this, and registering it with the others throws.
+
+- A credential query that `transaction_data` entries name in their `credential_ids` only matches
+  credentials that list the type of every one of them, as OpenID4VP requires the wallet to authorize
+  all of it. Credentials without `transactionDataTypes` only match the other queries.
+- Set `android.transactionDataOnly` too and the credential only matches such queries. A payment card
+  with it is not offered for a request that only asks for its claims.
+- For `urn:paso:sca:global:payment:1` and `urn:eudi:sca:eu.europa.ec:payment:single:1`, the picker shows a
+  payment: `payload.payee.name` as the merchant, `payload.amount` as the amount (with `EUR` shown as `€`), and the credential as
+  the payment method. Two payments for one credential get the regular entry instead.
+- A request with `transaction_data` that cannot be read, or that names no credential query, matches nothing.
+
+```ts
+await registerCredentials({
+  credentials: [
+    {
+      ...card,
+      android: { transactionDataTypes: ["urn:paso:sca:global:payment:1"], transactionDataOnly: true },
+    },
+  ],
+});
+```
+
+The matcher only reads the request. Validate the transaction and show it in the request UI, and add
+the `transaction_data_hashes` to the response.
 
 #### Expiring a registration on iOS
 
