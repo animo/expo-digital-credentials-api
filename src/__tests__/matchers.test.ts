@@ -42,6 +42,8 @@ describe('cbor', () => {
     expect(hex(encodeCbor('a'))).toBe('6161')
     expect(hex(encodeCbor('IETF'))).toBe('6449455446')
     expect(hex(encodeCbor(new Uint8Array([1, 2, 3, 4])))).toBe('4401020304')
+    expect(hex(encodeCbor(true))).toBe('f5')
+    expect(hex(encodeCbor(false))).toBe('f4')
     expect(hex(encodeCbor([]))).toBe('80')
     expect(hex(encodeCbor({}))).toBe('a0')
     expect(hex(encodeCbor({ a: 'A', b: ['B'] }))).toBe('a2616161416162816142')
@@ -232,6 +234,30 @@ describe('cmwallet / ubique matcher', () => {
 
     expect(json.credentials.mso_mdoc['org.iso.18013.5.1.mDL'][0].icon).toEqual({ start: 4, length: 4 })
     expect([...encoded.slice(4, 8)]).toEqual([0, 1, 2, 3])
+  })
+
+  test('refuses a transaction data gate it would drop', () => {
+    const gated = { ...pid, android: { transactionDataTypes: ['urn:paso:sca:global:payment:1'] } }
+
+    expect(() => encodeCredentialsBase64('ubique', [gated], { protocols: ['openid4vp'] })).toThrow(
+      /cannot gate credential 'pid-1' on transaction data/
+    )
+  })
+
+  test('refuses transactionDataOnly with a matcher that would drop it', () => {
+    const gated = { ...pid, android: { transactionDataOnly: true } }
+
+    expect(() => encodeCredentialsBase64('cmwallet', [gated], { protocols: ['openid4vp'] })).toThrow(
+      /cannot gate credential 'pid-1' on transaction data/
+    )
+  })
+
+  test('refuses transactionDataOnly without transactionDataTypes', () => {
+    const gated = { ...pid, android: { transactionDataOnly: true } }
+
+    expect(() => encodeCredentialsBase64('multipaz', [gated], { protocols: ['openid4vp'] })).toThrow(
+      /'pid-1' sets android.transactionDataOnly without android.transactionDataTypes/
+    )
   })
 
   test('refuses a reader gate it would drop', () => {

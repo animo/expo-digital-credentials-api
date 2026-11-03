@@ -19,3 +19,4 @@ __tests__
 /plugin/src
 tsconfig.json
 plugin/tsconfig.json
+/matcher/

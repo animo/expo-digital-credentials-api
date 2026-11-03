@@ -37,6 +37,25 @@ export function encodeCredentialsBase64(
     )
   }
 
+  const transactionGated = credentials.find(
+    (credential) => credential.android?.transactionDataTypes?.length || credential.android?.transactionDataOnly
+  )
+  if (matcher !== 'multipaz' && transactionGated) {
+    throw new Error(
+      `The '${matcher}' matcher cannot gate credential '${transactionGated.id}' on transaction data. Only 'multipaz' supports android.transactionDataTypes and android.transactionDataOnly.`
+    )
+  }
+
+  // It could only match queries carrying transaction data, which need types it does not list.
+  const neverMatches = credentials.find(
+    (credential) => credential.android?.transactionDataOnly && !credential.android.transactionDataTypes?.length
+  )
+  if (neverMatches) {
+    throw new Error(
+      `Credential '${neverMatches.id}' sets android.transactionDataOnly without android.transactionDataTypes, so it would never match.`
+    )
+  }
+
   return encodeBase64(
     matcher === 'multipaz'
       ? encodeMultipazCredentials(credentials, protocols)
