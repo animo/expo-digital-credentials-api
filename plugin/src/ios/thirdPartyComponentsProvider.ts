@@ -53,7 +53,7 @@ export function makeNilSafe(source: string): string | null {
   const literal = source.match(literalPattern)
   if (!literal) return null
 
-  const [matched, entries, indent] = literal
+  const [matched, entries = '', indent = ''] = literal
   if (!classLookupPattern.test(entries)) return null
   classLookupPattern.lastIndex = 0
 

@@ -87,12 +87,12 @@ enum ExtensionReactNative {
 final class RequestModel: ObservableObject {
     /// Nil when the request cannot be answered at all, which today means the OS reported no origin.
     /// The request is cancelled instead of being shown: see ``DocumentRequestSession/init(context:)``.
-    let session: DocumentRequestSession?
+    let session: DcApiRequestSession?
 
-    init(context: ISO18013MobileDocumentRequestContext) {
-        guard let session = DocumentRequestSession(context: context) else {
+    init(session: DcApiRequestSession?, cancel: () -> Void) {
+        guard let session else {
             dcApiLog.error("request: no origin — cancelling, there is nothing that could be answered")
-            context.cancel()
+            cancel()
 
             self.session = nil
             DcApiRequestSessionStore.current = nil
@@ -103,11 +103,9 @@ final class RequestModel: ObservableObject {
         // The expo module answers JS from here; nothing else in this target is JS-facing.
         DcApiRequestSessionStore.current = session
 
-        // Quoted: the origin is bound into the session transcript verbatim, so a trailing slash or
-        // a stray path is the difference between a response the verifier can decrypt and one it
-        // cannot.
+        // Quoted, since a stray trailing slash in the bound origin breaks the response.
         dcApiLog.notice(
-            "request: origin='\(session.origin, privacy: .public)' docTypes=\(session.requestedDocumentTypes.joined(separator: ","), privacy: .public)"
+            "request: origin='\(session.origin, privacy: .public)' protocol=\(session.exchangeProtocol, privacy: .public)"
         )
     }
 }
@@ -118,8 +116,26 @@ struct DigitalCredentialsRequestView: View {
     @StateObject private var model: RequestModel
 
     init(requestContext: ISO18013MobileDocumentRequestContext) {
-        _model = StateObject(wrappedValue: RequestModel(context: requestContext))
+        _model = StateObject(
+            wrappedValue: RequestModel(session: DocumentRequestSession(context: requestContext), cancel: requestContext.cancel)
+        )
     }
+
+    #if compiler(>=6.4.2)
+        @available(iOS 27.3, *)
+        init(requestContext: ISO18013MobileDocumentRawRequestContext) {
+            _model = StateObject(
+                wrappedValue: RequestModel(session: RawRequestSession(context: requestContext), cancel: requestContext.cancel)
+            )
+        }
+
+        @available(iOS 27.3, *)
+        init(requestContext: OpenID4VPRawRequestContext) {
+            _model = StateObject(
+                wrappedValue: RequestModel(session: RawRequestSession(context: requestContext), cancel: requestContext.cancel)
+            )
+        }
+    #endif
 
     var body: some View {
         ReactNativeRootView(model: model)
@@ -141,10 +157,7 @@ private struct ReactNativeRootView: UIViewRepresentable {
             return UIView()
         }
 
-        // A JSON string, exactly like the Android host passes: the raw request is not in it, since
-        // the OS only releases that once the wallet approves. Both nil cases — no session, or a
-        // request that would not encode — have already cancelled the request, so there is only an
-        // empty view left to return.
+        // A JSON string, like the Android host passes. Both nil cases have already cancelled the request.
         guard let requestJson = model.session?.requestJson else {
             model.session?.cancel()
             return UIView()

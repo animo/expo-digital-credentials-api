@@ -8,6 +8,9 @@ const mockNativeModule = vi.hoisted(() => ({
   registerCredentials: vi.fn(),
   // What the config plugin mirrored out of the app's `…mobile-document-types` entitlement.
   getEntitledDocumentTypes: vi.fn<() => string[] | null>(() => ['org.iso.18013.5.1.mDL']),
+  // And out of the `…verifiable-credential-types` one.
+  getEntitledVerifiableCredentialTypes: vi.fn<() => string[] | null>(() => null),
+  isOpenId4VpSupported: vi.fn(() => false),
 }))
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
@@ -45,12 +48,25 @@ const sdJwtPid: DcApiCredential = {
   credential: { format: 'dc+sd-jwt', vct: 'eu.europa.ec.eudi.pid.1', claims: { given_name: 'Timo' } },
 }
 
-const registeredDocuments = () => mockNativeModule.registerDocuments.mock.calls[0][0]
+const sdJwtDePid: DcApiCredential = {
+  id: 'pid-de-1',
+  display: { title: 'PID' },
+  credential: {
+    format: 'dc+sd-jwt',
+    vct: 'urn:eudi:pid:de:1',
+    extendedVcts: ['urn:eudi:pid:1'],
+    claims: { given_name: 'Timo' },
+  },
+}
+
+const registeredDocuments = () => mockNativeModule.registerDocuments.mock.calls[0]?.[0]
 
 describe('registerCredentials on ios', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockNativeModule.getEntitledDocumentTypes.mockReturnValue(['org.iso.18013.5.1.mDL'])
+    mockNativeModule.getEntitledVerifiableCredentialTypes.mockReturnValue(null)
+    mockNativeModule.isOpenId4VpSupported.mockReturnValue(false)
   })
 
   test('hands the OS only what it matches on, skipping what it cannot present', async () => {
@@ -59,7 +75,9 @@ describe('registerCredentials on ios', () => {
     expect(registeredDocuments()).toEqual([
       {
         documentIdentifier: 'mdl-1',
+        format: 'mso_mdoc',
         documentType: 'org.iso.18013.5.1.mDL',
+        supportedIssuerKeyIdentifiers: [],
         supportedAuthorityKeyIdentifiers: [],
       },
     ])
@@ -68,7 +86,7 @@ describe('registerCredentials on ios', () => {
   test("carries each credential's own gates, not one set for the whole call", async () => {
     await registerCredentials({
       credentials: [
-        { ...mdl, ios: { supportedAuthorityKeyIdentifiers: ['a2V5'] } },
+        { ...mdl, issuerAuthorityKeyIdentifiers: ['aXNz'], supportedAuthorityKeyIdentifiers: ['a2V5'] },
         { ...mdl, id: 'mdl-2', ios: { invalidationDate: new Date('2027-01-01T00:00:00Z') } },
       ],
     })
@@ -76,12 +94,16 @@ describe('registerCredentials on ios', () => {
     expect(registeredDocuments()).toEqual([
       {
         documentIdentifier: 'mdl-1',
+        format: 'mso_mdoc',
         documentType: 'org.iso.18013.5.1.mDL',
+        supportedIssuerKeyIdentifiers: ['aXNz'],
         supportedAuthorityKeyIdentifiers: ['a2V5'],
       },
       {
         documentIdentifier: 'mdl-2',
+        format: 'mso_mdoc',
         documentType: 'org.iso.18013.5.1.mDL',
+        supportedIssuerKeyIdentifiers: [],
         supportedAuthorityKeyIdentifiers: [],
         invalidationDate: '2027-01-01T00:00:00.000Z',
       },
@@ -94,7 +116,9 @@ describe('registerCredentials on ios', () => {
     expect(registeredDocuments()).toEqual([
       {
         documentIdentifier: 'mdl-1',
+        format: 'mso_mdoc',
         documentType: 'org.iso.18013.5.1.mDL',
+        supportedIssuerKeyIdentifiers: [],
         supportedAuthorityKeyIdentifiers: [],
       },
     ])
@@ -109,6 +133,31 @@ describe('registerCredentials on ios', () => {
       'org.iso.18013.5.1.mDL',
       'org.iso.23220.photoid.1',
     ])
+  })
+
+  test('registers sd-jwt vcs on iOS 27.3, by the entitled types among their vct and extended vcts', async () => {
+    mockNativeModule.isOpenId4VpSupported.mockReturnValue(true)
+    mockNativeModule.getEntitledVerifiableCredentialTypes.mockReturnValue(['urn:eudi:pid:1'])
+
+    await registerCredentials({ credentials: [sdJwtDePid, sdJwtPid] })
+
+    expect(registeredDocuments()).toEqual([
+      {
+        documentIdentifier: 'pid-de-1',
+        format: 'dc+sd-jwt',
+        verifiableCredentialTypes: ['urn:eudi:pid:1'],
+        supportedIssuerKeyIdentifiers: [],
+        supportedAuthorityKeyIdentifiers: [],
+      },
+    ])
+  })
+
+  test('skips sd-jwt vcs before iOS 27.3, even when their type is entitled', async () => {
+    mockNativeModule.getEntitledVerifiableCredentialTypes.mockReturnValue(['urn:eudi:pid:1'])
+
+    await registerCredentials({ credentials: [sdJwtDePid] })
+
+    expect(registeredDocuments()).toEqual([])
   })
 
   test('rejects two credentials with the same id, which the picked one could not be told apart by', async () => {
@@ -131,14 +180,18 @@ describe('registerCredential on ios', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockNativeModule.getEntitledDocumentTypes.mockReturnValue(['org.iso.18013.5.1.mDL'])
+    mockNativeModule.getEntitledVerifiableCredentialTypes.mockReturnValue(null)
+    mockNativeModule.isOpenId4VpSupported.mockReturnValue(false)
   })
 
   test('adds one document without replacing the registered set', async () => {
-    await registerCredential({ credential: { ...mdl, ios: { supportedAuthorityKeyIdentifiers: ['a2V5'] } } })
+    await registerCredential({ credential: { ...mdl, supportedAuthorityKeyIdentifiers: ['a2V5'] } })
 
     expect(mockNativeModule.addDocument).toHaveBeenCalledWith({
       documentIdentifier: 'mdl-1',
+      format: 'mso_mdoc',
       documentType: 'org.iso.18013.5.1.mDL',
+      supportedIssuerKeyIdentifiers: [],
       supportedAuthorityKeyIdentifiers: ['a2V5'],
     })
     expect(mockNativeModule.registerDocuments).not.toHaveBeenCalled()
@@ -154,7 +207,7 @@ describe('registerCredential on ios', () => {
 
   test('throws for a document type the app is not entitled to, naming what it is entitled to', async () => {
     await expect(registerCredential({ credential: photoId })).rejects.toThrow(
-      "Credential 'photo-id-1' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: org.iso.18013.5.1.mDL."
+      "Credential 'photo-id-1' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: org.iso.18013.5.1.mDL,"
     )
 
     expect(mockNativeModule.addDocument).not.toHaveBeenCalled()

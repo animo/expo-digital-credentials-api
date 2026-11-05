@@ -2,9 +2,10 @@ import type {
   AndroidDcApiRequest,
   DcApiCredential,
   DcApiProtocolRequest,
+  DcApiRawRequest,
   DcApiRequest,
-  IosDcApiRequest,
   IosDocumentRequest,
+  IosParsedDcApiRequest,
   IosPresentmentRequest,
   IosReaderAuthentication,
 } from '@animo-id/expo-digital-credentials-api/request-handler'
@@ -16,9 +17,8 @@ import { credentials } from '../credentials'
  * Minimal but complete request UI, shared by both platforms.
  *
  * The flow is the same on both: say who is asking and whether that can be proven, show what is being
- * asked for, and only commit once the user accepts. What differs is where the detail comes from — on
- * Android the picker already delivered the protocol request and the credentials it matched, on iOS the
- * OS parsed the request for us and holds the real thing back until `approve()`.
+ * asked for, and only commit once the user accepts. A raw request carries the protocol request
+ * itself, a parsed one (iOS before 27.3) only what the OS parsed until `approve()`.
  */
 export function DcApiScreen({ request }: { request: DcApiRequest }) {
   const [isSharing, setIsSharing] = useState(false)
@@ -34,7 +34,7 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
   // directly; a real wallet opens its database in the app group container, which is what
   // `getSharedContainerPath()` is for.
   const plan = useMemo(
-    () => (request.platform === 'ios' ? buildPlan(request.presentmentRequests, credentials) : undefined),
+    () => (request.kind === 'parsed' ? buildPlan(request.presentmentRequests, credentials) : undefined),
     [request]
   )
 
@@ -69,7 +69,7 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
     setError(undefined)
 
     try {
-      if (request.platform === 'ios') {
+      if (request.kind === 'parsed') {
         // Only now, and not a render earlier: iOS releases the raw request when the wallet commits
         // to answering it, so this is the point of no return.
         const [isoMdoc] = await request.approve()
@@ -83,32 +83,30 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
       // Android hands over no origin when a native app asked for itself. A response is bound to the
       // origin, so there is nothing to bind to here: this example only answers the web. A wallet
       // that wants to answer apps derives the app-based origin from `callingPackage` instead.
-      if (request.origin === undefined) {
-        throw new Error(`${request.callingPackage} asked directly; this wallet only answers websites`)
+      const { origin } = request
+      if (origin === undefined) {
+        throw new Error('A native app asked directly; this wallet only answers websites')
       }
 
-      // Nothing was picked when the caller went straight to the wallet with
-      // `identitycredentials.action.GET_CREDENTIALS` instead of through the system picker. A wallet
-      // then matches the request against its own storage, the way the iOS branch above has to; this
-      // example leans on the picker's match and has nothing to fall back on.
-      const { selection } = request
-      if (selection === undefined) {
+      // Nothing was picked when the caller skipped the system picker, and this example cannot match itself.
+      if (request.platform === 'android' && request.selection === undefined) {
         throw new Error('The request did not come from the system picker, so no credential was matched')
       }
 
-      const selected = pickedRequest(request)
+      const selected = selectedRequest(request)
       if (!selected) throw new Error('The request carries no protocol this wallet understands')
 
       // The picker returns one credential per credential the request asks for together — several
       // when a DCQL query or a deviceRequest asks for more than one — and the response carries them
       // all. Which query each one answers comes from matching it against the request.
+      const credentialIds = answeringCredentialIds(request)
       if (selected.protocol === 'org-iso-mdoc') {
         // No doctype to go with the credentials until the deviceRequest is parsed.
-        const answers = selection.credentialIds.map((credentialId) => ({ credentialId }))
-        const data = await buildIsoMdocResponse(selected.data, request.origin, answers)
+        const answers = credentialIds.map((credentialId) => ({ credentialId }))
+        const data = await buildIsoMdocResponse(selected.data, origin, answers)
         await request.respond({ protocol: selected.protocol, data })
       } else {
-        const data = await buildOpenid4vpResponse(selected.data, request.origin, selection.credentialIds)
+        const data = await buildOpenid4vpResponse(selected.data, origin, credentialIds)
         await request.respond({ protocol: selected.protocol, data })
       }
     } catch (shareError) {
@@ -118,15 +116,15 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
     }
   }
 
-  // Android's picker already guaranteed the match — as long as the request came through it at all.
-  // On iOS the wallet vouches for it itself: every mandatory presentment request has to have an
-  // answer before anything can be shared.
+  // A parsed request needs an answer for every mandatory presentment request. Android's picker already matched.
   const canShare =
-    request.platform === 'android'
-      ? request.selection !== undefined
-      : selection !== undefined &&
+    request.kind === 'parsed'
+      ? selection !== undefined &&
         answers.length > 0 &&
         selection.every(({ entry, set }) => !entry.isMandatory || set?.isSatisfiable)
+      : request.platform === 'android'
+        ? request.selection !== undefined
+        : request.requests.length > 0
 
   return (
     <View style={styles.sheet}>
@@ -137,7 +135,7 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
             (request.platform === 'android' ? `the app ${request.callingPackage}` : 'an unknown origin')}
         </Text>
 
-        {request.platform === 'ios' ? (
+        {request.kind === 'parsed' ? (
           <IosRequestSummary
             request={request}
             selection={selection}
@@ -149,7 +147,7 @@ export function DcApiScreen({ request }: { request: DcApiRequest }) {
             }
           />
         ) : (
-          <AndroidRequestSummary request={request} />
+          <RawRequestSummary request={request} />
         )}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -174,7 +172,7 @@ function IosRequestSummary({
   onSelectSet,
   onSelectCredential,
 }: {
-  request: IosDcApiRequest
+  request: IosParsedDcApiRequest
   selection?: Selection
   onSelectSet: (presentmentIndex: number, setIndex: number) => void
   onSelectCredential: (key: string, credentialId: string) => void
@@ -253,7 +251,7 @@ function IosRequestSummary({
  *
  * iOS parses ISO/IEC 18013-5 reader authentication out of the request, so the screen can say this
  * before `approve()`. An empty list means the request carried none, which only reaches a wallet that
- * registered without `ios.supportedAuthorityKeyIdentifiers` — with those set, the OS drops requests
+ * registered without `supportedAuthorityKeyIdentifiers` — with those set, the OS drops requests
  * that do not chain up to them while matching, and the wallet never sees them.
  *
  * A non-empty list is not by itself a trust decision: it says the request was signed, not that the
@@ -293,23 +291,30 @@ function ReaderAuthentications({ readerAuthentications }: { readerAuthentication
  * confirms what was picked. Everything else — the requested claims, and who is asking — sits inside
  * the request itself, which is protocol work: see `summarize`.
  */
-function AndroidRequestSummary({ request }: { request: AndroidDcApiRequest }) {
+function RawRequestSummary({ request }: { request: DcApiRawRequest }) {
   // Without a pick there is no matched request to show, so the first one stands in.
-  const selected = pickedRequest(request) ?? request.requests[0]
-  const credentialIds = request.selection?.credentialIds ?? []
+  const selected = selectedRequest(request) ?? request.requests[0]
+  const credentialIds = answeringCredentialIds(request)
 
   return (
     <>
-      <Section title="Requested by" subtitle={request.callingPackage}>
-        {/* There is no parsed reader authentication on Android: it is part of the request, as
-            `readerAuth` in the Annex C deviceRequest or as the signature over a signed OpenID4VP
-            request. The protocol identifier is the only hint available without parsing. */}
+      <Section title="Requested by" subtitle={request.platform === 'android' ? request.callingPackage : request.origin}>
+        {/* Reader authentication sits inside a raw request. Without parsing it, the protocol is the only hint. */}
         <Text style={styles.claim}>{readerAuthenticationHint(selected)}</Text>
       </Section>
 
       {/* Absent when the caller reached the wallet through `identitycredentials.action.GET_CREDENTIALS`,
           which does not go through the picker. A real wallet matches the request itself then. */}
-      <Section title="Sharing" subtitle={request.selection ? 'Picked in the system picker' : 'Nothing was picked'}>
+      <Section
+        title="Sharing"
+        subtitle={
+          request.platform === 'ios'
+            ? 'iOS has no picker: every credential this example holds'
+            : request.selection
+              ? 'Picked in the system picker'
+              : 'Nothing was picked'
+        }
+      >
         {credentialIds.length > 0 ? (
           credentialIds.map((credentialId) => (
             <Text key={credentialId} style={styles.claim}>
@@ -338,6 +343,17 @@ function AndroidRequestSummary({ request }: { request: AndroidDcApiRequest }) {
       </Section>
     </>
   )
+}
+
+function selectedRequest(request: DcApiRawRequest): DcApiProtocolRequest | undefined {
+  return request.platform === 'android' ? pickedRequest(request) : request.requests[0]
+}
+
+// iOS has no picker, so there this example answers with every credential it holds.
+function answeringCredentialIds(request: DcApiRawRequest): string[] {
+  return request.platform === 'android'
+    ? request.selection?.credentialIds ?? []
+    : credentials.map((credential) => credential.id)
 }
 
 /**
@@ -380,21 +396,20 @@ function summarize(request: DcApiProtocolRequest): string[] {
     return [`deviceRequest: ${request.data.deviceRequest.slice(0, 32)}…`]
   }
 
-  try {
-    const authorizationRequest = JSON.parse(request.data) as {
-      dcql_query?: { credentials?: Array<{ id?: string; claims?: Array<{ path?: unknown[] }> }> }
-    }
-
-    const credentials = authorizationRequest.dcql_query?.credentials ?? []
-    const claims = credentials.flatMap((credential) =>
-      (credential.claims ?? []).map((claim) => `${credential.id ?? 'credential'}: ${(claim.path ?? []).join('.')}`)
-    )
-
-    return claims.length > 0 ? claims : ['The request carries no DCQL claims to show']
-  } catch {
-    // Signed requests arrive as a JWT. Verify the signature before showing anything from it.
+  if (request.protocol === 'openid4vp-v1-signed' || request.protocol === 'openid4vp-v1-multisigned') {
     return ['A signed request — verify and decode it before rendering consent']
   }
+
+  const authorizationRequest = request.data as {
+    dcql_query?: { credentials?: Array<{ id?: string; claims?: Array<{ path?: unknown[] }> }> }
+  }
+
+  const credentials = authorizationRequest.dcql_query?.credentials ?? []
+  const claims = credentials.flatMap((credential) =>
+    (credential.claims ?? []).map((claim) => `${credential.id ?? 'credential'}: ${(claim.path ?? []).join('.')}`)
+  )
+
+  return claims.length > 0 ? claims : ['The request carries no DCQL claims to show']
 }
 
 /** One document the verifier asked for, with the wallet's credentials that could answer it. */
@@ -525,11 +540,11 @@ async function buildIsoMdocResponse(
 
 /** The same, for OpenID4VP: the authorization response reaches the site exactly as returned here. */
 async function buildOpenid4vpResponse(
-  data: string,
+  data: Record<string, unknown>,
   origin: string,
   credentialIds: string[]
 ): Promise<Record<string, unknown>> {
-  console.log('[example] building an OpenID4VP response', { origin, credentialIds, request: data.slice(0, 64) })
+  console.log('[example] building an OpenID4VP response', { origin, credentialIds, request: Object.keys(data) })
   return { vp_token: 'REPLACE_WITH_VP_TOKEN' }
 }
 

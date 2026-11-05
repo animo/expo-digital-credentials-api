@@ -2,7 +2,7 @@ import Foundation
 
 /// The credential request the provider extension is currently showing UI for.
 ///
-/// The extension target owns the `ISO18013MobileDocumentRequestContext` and the ExtensionKit scene,
+/// The extension target owns the request context and the ExtensionKit scene,
 /// neither of which this pod links, so it hands the session over behind this protocol. That keeps
 /// all of the JS-facing API in the expo module — the same one the host app uses — instead of a
 /// separate bridge module only the extension has.
@@ -11,28 +11,23 @@ import Foundation
 public protocol DcApiRequestSession: AnyObject {
     /// The origin the request was made on behalf of.
     ///
-    /// Never optional: a request without one cannot be answered — the origin is bound into both the
-    /// raw request validation and the session transcript — so no session is created for it at all.
+    /// Never optional: the response is bound to it, so a request without one gets no session.
     var origin: String { get }
 
-    /// The request as the OS parsed it, JSON encoded, in the shape the JS side expects. Everything
-    /// the wallet can render consent from — but not the raw request itself, which the OS only
-    /// releases once ``approve()`` is called.
-    ///
-    /// Nil only if the parsed request could not be encoded, which leaves nothing safe to render.
+    /// The protocol the request came in over, e.g. `openid4vp-v1-signed`. Responses must use it.
+    var exchangeProtocol: String { get }
+
+    /// The request, JSON encoded in the shape the JS side expects. Nil when it could not be encoded.
     var requestJson: String? { get }
 
     /// Commit to answering the request.
     ///
-    /// - Returns: the raw request data the OS released, i.e. the ISO/IEC TS 18013-7:2025 C.2
-    ///   `{deviceRequest, encryptionInfo}` payload.
+    /// - Returns: the C.2 `{deviceRequest, encryptionInfo}` payload the OS released. Throws for raw
+    ///   requests, which carry it in ``requestJson`` from the start.
     func approve() async throws -> Data
 
-    /// Complete the request with the CBOR `EncryptedResponse` (C.3), and nothing around it.
-    ///
-    /// Not the `{ "response": ... }` object: iOS builds that itself, base64url encoding these bytes
-    /// into its `response` member. The JS side answers with the object — the same one Android takes
-    /// — and the module unwraps it before it gets here.
+    /// Complete the request: for `org-iso-mdoc` with the bare CBOR `EncryptedResponse` (iOS wraps it
+    /// in the C.3 object itself), for OpenID4VP with the JSON encoded authorization response.
     func respond(_ responseData: Data) throws
 
     func cancel()

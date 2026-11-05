@@ -324,8 +324,8 @@ describe('issuer identifiers', () => {
   }
 
   test('a request naming trusted issuers only matches credentials registered with one of them', () => {
-    const trusted = { ...pid, android: { issuerAuthorityKeyIdentifiers: [readerAki] } }
-    const other = { ...pid, id: 'pid 2', android: { issuerAuthorityKeyIdentifiers: ['AAECAw=='] } }
+    const trusted = { ...pid, issuerAuthorityKeyIdentifiers: [readerAki] }
+    const other = { ...pid, id: 'pid 2', issuerAuthorityKeyIdentifiers: ['AAECAw=='] }
 
     expect(runMatcher([trusted, other], [openid4vp({ credentials: [trustedPidQuery] })]).map(pick)).toEqual([
       ['0 openid4vp-v1-unsigned pid 1'],
@@ -337,7 +337,7 @@ describe('issuer identifiers', () => {
   })
 
   test('a request naming no issuers matches either way', () => {
-    const trusted = { ...pid, android: { issuerAuthorityKeyIdentifiers: [readerAki] } }
+    const trusted = { ...pid, issuerAuthorityKeyIdentifiers: [readerAki] }
 
     expect(runMatcher([trusted], [openid4vp({ credentials: [pidQuery] })]).map(pick)).toEqual([
       ['0 openid4vp-v1-unsigned pid 1'],
@@ -346,7 +346,7 @@ describe('issuer identifiers', () => {
 })
 
 describe('reader gating', () => {
-  const gated = { ...pid, android: { supportedAuthorityKeyIdentifiers: [readerAki] } }
+  const gated = { ...pid, supportedAuthorityKeyIdentifiers: [readerAki] }
 
   // The matcher only reads the certificates out of the header, so the signature is never checked.
   const signedBy = (certificate: string) => ({
@@ -369,7 +369,7 @@ describe('reader gating', () => {
   })
 
   test('a gated credential never matches a request signed by another reader', () => {
-    const other = { ...pid, android: { supportedAuthorityKeyIdentifiers: ['AAECAw=='] } }
+    const other = { ...pid, supportedAuthorityKeyIdentifiers: ['AAECAw=='] }
 
     expect(runMatcher([other], [signedBy(readerCertificate)])).toEqual([])
   })

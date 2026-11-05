@@ -1,13 +1,19 @@
 import { type NativeModule, requireOptionalNativeModule } from 'expo'
 import { DcApiUnsupportedError } from './util'
 
+/** What the OS matches a registered credential on. */
+export type IosRegistrationType =
+  | { format: 'mso_mdoc'; documentType: string }
+  /** iOS 27.3 and later. */
+  | { format: 'dc+sd-jwt'; verifiableCredentialTypes: string[] }
+
 /**
  * A document as the iOS module registers it — everything the OS needs to match it, and nothing else.
  * The credential itself never leaves the app.
  */
-export type IosDocumentRegistration = {
+export type IosDocumentRegistration = IosRegistrationType & {
   documentIdentifier: string
-  documentType: string
+  supportedIssuerKeyIdentifiers: string[]
   supportedAuthorityKeyIdentifiers: string[]
 
   /**
@@ -18,6 +24,9 @@ export type IosDocumentRegistration = {
 
 declare class DigitalCredentialsApiModule extends NativeModule {
   isSupported(): boolean
+
+  /** iOS: whether SD-JWT VCs can be registered and OpenID4VP requests answered (iOS 27.3). */
+  isOpenId4VpSupported?(): boolean
   getRegistrationStatus(): Promise<string>
 
   /** Android: the encoded credential database plus the matcher that reads it. */
@@ -33,6 +42,9 @@ declare class DigitalCredentialsApiModule extends NativeModule {
    * plugin mirrored them into the Info.plist. `undefined` when the key is absent.
    */
   getEntitledDocumentTypes?(): string[] | null
+
+  /** iOS: the same for the `…verifiable-credential-types` entitlement. */
+  getEntitledVerifiableCredentialTypes?(): string[] | null
 
   /** iOS: path of the app group container, in whichever process asks. */
   getSharedContainerPath(): string

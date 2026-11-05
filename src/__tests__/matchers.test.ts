@@ -159,10 +159,10 @@ describe('multipaz matcher', () => {
   })
 
   test('refuses identifiers that are not base64', () => {
-    const credential = { ...pid, android: { issuerAuthorityKeyIdentifiers: ['N1OrmtAijM_4g9xcF7evzmkzXVs'] } }
+    const credential = { ...pid, issuerAuthorityKeyIdentifiers: ['N1OrmtAijM_4g9xcF7evzmkzXVs'] }
 
     expect(() => encodeMultipazCredentials([credential], ['openid4vp'])).toThrow(
-      "'android.issuerAuthorityKeyIdentifiers' holds 'N1OrmtAijM_4g9xcF7evzmkzXVs', which is not base64, for credential 'pid-1'"
+      "'issuerAuthorityKeyIdentifiers' holds 'N1OrmtAijM_4g9xcF7evzmkzXVs', which is not base64, for credential 'pid-1'"
     )
   })
 
@@ -261,13 +261,13 @@ describe('cmwallet / ubique matcher', () => {
   })
 
   test('refuses a reader gate it would drop', () => {
-    const gated = { ...pid, android: { supportedAuthorityKeyIdentifiers: ['AAECAw=='] } }
+    const gated = { ...pid, supportedAuthorityKeyIdentifiers: ['AAECAw=='] }
 
     expect(() => encodeCredentialsBase64('cmwallet', [gated], { protocols: ['openid4vp'] })).toThrow(
       /cannot gate credential 'pid-1' on its reader/
     )
     // Issuer identifiers only narrow what `trusted_authorities` matches, which these matchers ignore.
-    const withIssuer = { ...pid, android: { issuerAuthorityKeyIdentifiers: ['AAECAw=='] } }
+    const withIssuer = { ...pid, issuerAuthorityKeyIdentifiers: ['AAECAw=='] }
     expect(() => encodeCredentialsBase64('ubique', [withIssuer], { protocols: ['openid4vp'] })).not.toThrow()
   })
 

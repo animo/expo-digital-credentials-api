@@ -1,12 +1,16 @@
 import { type ConfigPlugin, withEntitlementsPlist, withInfoPlist } from 'expo/config-plugins'
 import { iosSupportedDocumentTypes } from '../../../src/iosDocumentTypes'
-import { type DigitalCredentialsApiPluginOptions, getAppGroup, getKeychainAccessGroup } from '../types'
-
-const mobileDocumentTypesEntitlement =
-  'com.apple.developer.identity-document-services.document-provider.mobile-document-types'
+import {
+  type DigitalCredentialsApiPluginOptions,
+  getAppGroup,
+  getIdentityDocumentEntitlements,
+  getKeychainAccessGroup,
+  verifiableCredentialTypesEntitlement,
+} from '../types'
 
 export const withAppEntitlements: ConfigPlugin<DigitalCredentialsApiPluginOptions> = (config, options) => {
   const documentTypes = options.ios?.documentTypes ?? []
+  const verifiableCredentialTypes = options.ios?.verifiableCredentialTypes ?? []
   const invalid = documentTypes.filter(
     (documentType) => !(iosSupportedDocumentTypes as readonly string[]).includes(documentType)
   )
@@ -25,7 +29,9 @@ export const withAppEntitlements: ConfigPlugin<DigitalCredentialsApiPluginOption
   const keychainAccessGroup = getKeychainAccessGroup(bundleIdentifier, options)
 
   const withPlists = withEntitlementsPlist(config, (config) => {
-    config.modResults[mobileDocumentTypesEntitlement] = documentTypes
+    // Dropped first, so a prebuild over an existing project does not keep types no longer configured.
+    delete config.modResults[verifiableCredentialTypesEntitlement]
+    Object.assign(config.modResults, getIdentityDocumentEntitlements(options))
 
     config.modResults['com.apple.security.application-groups'] = unique([
       ...toArray(config.modResults['com.apple.security.application-groups']),
@@ -50,6 +56,7 @@ export const withAppEntitlements: ConfigPlugin<DigitalCredentialsApiPluginOption
     // `registerCredentials` skip what this build could never register. Only the app registers
     // documents, so the extension's Info.plist does not need it.
     config.modResults.EXPO_DC_API_DOCUMENT_TYPES = documentTypes
+    config.modResults.EXPO_DC_API_VERIFIABLE_CREDENTIAL_TYPES = verifiableCredentialTypes
     return config
   })
 }

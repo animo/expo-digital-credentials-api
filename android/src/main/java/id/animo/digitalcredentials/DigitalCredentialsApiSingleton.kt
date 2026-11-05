@@ -296,22 +296,17 @@ object DigitalCredentialsApiSingleton : SingletonModule {
                 val entry = entries?.optJSONObject(index) ?: continue
                 val protocol = entry.optString("protocol")
                 val data = if (entry.has("data")) entry.get("data") else entry.opt("request")
-                add(JSONObject().put("protocol", protocol).put("data", normalizeData(protocol, data)))
+                add(JSONObject().put("protocol", protocol).put("data", normalizeData(data)))
             }
         }
     }
 
-    /**
-     * `org-iso-mdoc` carries an object (`{deviceRequest, encryptionInfo}`), OpenID4VP a JSON string.
-     * Chrome is not consistent about which of the two it sends for a given protocol, so both are
-     * accepted and normalized to the documented shape.
-     */
-    private fun normalizeData(protocol: String, data: Any?): Any =
-            when {
-                protocol == "org-iso-mdoc" && data is String -> JSONObject(data)
-                protocol == "org-iso-mdoc" -> data ?: JSONObject()
-                data is String -> data
-                else -> data?.toString() ?: ""
+    /** Chrome sometimes sends `data` JSON encoded. A string that is no JSON object is left for JS to drop. */
+    private fun normalizeData(data: Any?): Any =
+            when (data) {
+                is String -> runCatching { JSONObject(data) }.getOrDefault(data)
+                null -> JSONObject()
+                else -> data
             }
 
     private fun storedMatcher(context: Context) =

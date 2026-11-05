@@ -7,8 +7,9 @@ import {
   type DcApiProtocolRequest,
   type DcApiRequest,
   type DcApiResponseOptions,
-  type IosDcApiRequest,
+  type IosParsedDcApiRequest,
   type IosPresentmentRequest,
+  type IosRawDcApiRequest,
   type IosReaderAuthentication,
   type IsoMdocProtocolRequest,
   dcApiProtocols,
@@ -17,9 +18,8 @@ import {
 /**
  * The request as the native layer hands it over, before the actions are attached.
  *
- * The two platforms carry different things because they know different things at this point:
- * Android gets the protocol requests with the picker result, iOS only what the OS parsed out of a
- * request it has not released yet.
+ * Android carries the protocol requests with the picker result, iOS from 27.3 the one raw request,
+ * and iOS before that only what the OS parsed out of a request it has not released yet.
  */
 type NativeRequest =
   | {
@@ -42,9 +42,18 @@ type NativeRequest =
     }
   | {
       platform: 'ios'
+      kind: 'parsed'
       origin: string
       presentmentRequests: IosPresentmentRequest[]
       readerAuthentications: IosReaderAuthentication[]
+    }
+  | {
+      platform: 'ios'
+      kind: 'raw'
+      origin: string
+      protocol: string
+      /** The request's `data` member, JSON encoded. */
+      data: string
     }
 
 /**
@@ -84,11 +93,24 @@ export function parseRequest(raw: string | NativeRequest): DcApiRequest {
     },
   }
 
+  if (native.platform === 'ios' && native.kind === 'raw') {
+    const request = { protocol: native.protocol, data: JSON.parse(native.data) }
+
+    return {
+      platform: 'ios',
+      kind: 'raw',
+      origin: native.origin,
+      requests: isKnownProtocolRequest(request) ? [request] : [],
+      ...actions,
+    } satisfies IosRawDcApiRequest
+  }
+
   if (native.platform === 'ios') {
     const presentmentRequests = native.presentmentRequests ?? []
 
     return {
       platform: 'ios',
+      kind: 'parsed',
       origin: native.origin,
       presentmentRequests,
       readerAuthentications: native.readerAuthentications ?? [],
@@ -98,19 +120,18 @@ export function parseRequest(raw: string | NativeRequest): DcApiRequest {
       },
 
       ...actions,
-    } satisfies IosDcApiRequest
+    } satisfies IosParsedDcApiRequest
   }
 
   // Protocols this package cannot represent are dropped, but only after the picked entry has been
   // resolved against the full list: the matcher indexed the verifier's requests, not ours.
   const supported = (native.requests ?? [])
     .map((request, index) => ({ request, index }))
-    .filter((entry): entry is { request: DcApiProtocolRequest; index: number } =>
-      (dcApiProtocols as readonly string[]).includes(entry.request.protocol)
-    )
+    .filter((entry): entry is { request: DcApiProtocolRequest; index: number } => isKnownProtocolRequest(entry.request))
 
   return {
     platform: 'android',
+    kind: 'raw',
     // Kept as an absent value, never as an empty string: see `AndroidDcApiRequest.origin`.
     origin: native.origin ?? undefined,
     callingPackage: native.callingPackage,
@@ -118,6 +139,15 @@ export function parseRequest(raw: string | NativeRequest): DcApiRequest {
     selection: parseAndroidSelection(native, supported),
     ...actions,
   } satisfies AndroidDcApiRequest
+}
+
+// Android leaves a `data` string it could not parse as it is.
+function isKnownProtocolRequest(request: { protocol: string; data: unknown }): request is DcApiProtocolRequest {
+  return (
+    (dcApiProtocols as readonly string[]).includes(request.protocol) &&
+    typeof request.data === 'object' &&
+    request.data !== null
+  )
 }
 
 /**

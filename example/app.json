@@ -22,17 +22,6 @@
     },
     "ios": {
       "bundleIdentifier": "id.animo.digitalcredentials.example"
-    },
-    "plugins": [
-      [
-        "../app.plugin.js",
-        {
-          "ios": {
-            "documentTypes": ["org.iso.18013.5.1.mDL", "eu.europa.ec.eudi.pid.1"],
-            "excludedPackages": ["react-native-safe-area-context"]
-          }
-        }
-      ]
-    ]
+    }
   }
 }

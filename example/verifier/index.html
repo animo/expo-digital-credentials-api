@@ -1,0 +1,172 @@
+<!doctype html>
+<!--
+  A test verifier for the example app: sends OpenID4VP requests over the Digital Credentials API, to
+  check what the OS and the matchers offer for each registration. Serve it on localhost, the only
+  plain-http origin browsers allow the API on: `pnpm verifier` in example/. On an Android emulator,
+  forward the port first with `adb reverse tcp:8765 tcp:8765`.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DC API test verifier</title>
+    <style>
+      body { font: 15px/1.4 -apple-system, system-ui, sans-serif; margin: 0; padding: 20px; background: #f4f4f5; color: #27272a; }
+      h1 { font-size: 20px; font-weight: 500; margin: 0 0 16px; }
+      fieldset { border: 0; margin: 0 0 16px; padding: 16px; background: #fff; border-radius: 10px; }
+      legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-weight: 500; }
+      label { display: block; margin: 6px 0; }
+      input[type="text"] { box-sizing: border-box; width: 100%; padding: 8px; font: 14px ui-monospace, monospace; border: 1px solid #d4d4d8; border-radius: 6px; }
+      small { display: block; color: #71717a; margin-top: 4px; }
+      code { font-size: 13px; word-break: break-all; }
+      button { width: 100%; padding: 12px; font-size: 16px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; }
+      .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .presets button { width: auto; padding: 6px 10px; font-size: 13px; border: 1px solid #d4d4d8; background: #fff; color: #27272a; border-radius: 999px; }
+      pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>DC API test verifier</h1>
+
+    <fieldset>
+      <legend>Credential</legend>
+      <label><input type="radio" name="credential" value="mdl" checked /> mDL (mdoc)</label>
+      <label><input type="radio" name="credential" value="pidMdoc" /> PID (mdoc)</label>
+      <label><input type="radio" name="credential" value="pidSdJwt" /> PID (SD-JWT)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Trusted issuers</legend>
+      <input id="issuers" type="text" placeholder="none" autocapitalize="off" autocomplete="off" />
+      <div class="presets">
+        <button type="button" data-issuers="own">Its issuer</button>
+        <button type="button" data-issuers="other">Another issuer</button>
+        <button type="button" data-issuers="own,other">Both</button>
+        <button type="button" data-issuers="">None</button>
+      </div>
+      <small>
+        Authority key identifiers, base64 or base64url, comma separated. Sent as <code>trusted_authorities</code> of
+        type <code>aki</code>. Empty sends none.
+      </small>
+    </fieldset>
+
+    <fieldset>
+      <legend>Request</legend>
+      <label><input type="radio" name="signing" value="unsigned" checked /> Unsigned</label>
+      <label><input type="radio" name="signing" value="verifier1" /> Signed by Test Verifier 1</label>
+      <label><input type="radio" name="signing" value="verifier2" /> Signed by Test Verifier 2</label>
+      <small>The example app's reader options trust these two by name.</small>
+    </fieldset>
+
+    <button id="request">Request</button>
+    <pre id="output"></pre>
+
+    <script>
+      // The issuer identifiers the example app registers its credentials with, see credentials.ts.
+      const issuers = { mdl: 'dXRvcGlhLW1kbC1pc3N1ZXItMDE=', pid: 'dXRvcGlhLXBpZC1pc3N1ZXItMDE=', other: 'dW5rbm93bi1pc3N1ZXItMDAwMQ==' }
+
+      const credentials = {
+        mdl: { issuer: issuers.mdl, query: { format: 'mso_mdoc', meta: { doctype_value: 'org.iso.18013.5.1.mDL' }, claims: [{ path: ['org.iso.18013.5.1', 'family_name'] }] } },
+        pidMdoc: { issuer: issuers.pid, query: { format: 'mso_mdoc', meta: { doctype_value: 'eu.europa.ec.eudi.pid.1' }, claims: [{ path: ['eu.europa.ec.eudi.pid.1', 'given_name'] }] } },
+        pidSdJwt: { issuer: issuers.pid, query: { format: 'dc+sd-jwt', meta: { vct_values: ['urn:eudi:pid:1'] }, claims: [{ path: ['first_name'] }] } },
+      }
+
+      // Test-only: two self-signed P-256 certificates and their private keys, the readers the example
+      // app's reader options trust (see App.tsx). Never trust them anywhere else.
+      const verifiers = {
+        verifier1: {
+          certificate:
+            'MIIBkjCCATmgAwIBAgIJAMcD+48rOcWAMAoGCCqGSM49BAMCMBoxGDAWBgNVBAMMD1Rlc3QgVmVyaWZpZXIgMTAgFw0yNjExMDUxMzI0NDJaGA8yMTI2MTAxMjEzMjQ0MlowGjEYMBYGA1UEAwwPVGVzdCBWZXJpZmllciAxMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELfv3Dj8hEWpQ5qnvWnzcOKGBOeA+UiscwkOSeoLi1OdrHrnA0rF/D5blvkcDLTkxpmoV4doVsTiMS3WewAxtsqNmMGQwHQYDVR0OBBYEFIRUMWZNyF7FXebbOg62d+6Z7a62MB8GA1UdIwQYMBaAFIRUMWZNyF7FXebbOg62d+6Z7a62MBQGA1UdEQQNMAuCCWxvY2FsaG9zdDAMBgNVHRMBAf8EAjAAMAoGCCqGSM49BAMCA0cAMEQCIBlPcXiVVFLWUM9vAP/W0RbzFMBh6f7UfZulyByN+4k0AiBMJJX7huYlhD4dmBxujXhOehfb1miZMGIKD8OFdYklog==',
+          privateKey:
+            'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgV/LqBz8rwKxx7ryx+X7oqE/1BMOYTr1w8PSwvSDYEB2hRANCAAQt+/cOPyERalDmqe9afNw4oYE54D5SKxzCQ5J6guLU52seucDSsX8PluW+RwMtOTGmahXh2hWxOIxLdZ7ADG2y',
+        },
+        verifier2: {
+          certificate:
+            'MIIBkzCCATmgAwIBAgIJAP8XL3CQo8FsMAoGCCqGSM49BAMCMBoxGDAWBgNVBAMMD1Rlc3QgVmVyaWZpZXIgMjAgFw0yNjExMDUxMzI0NDJaGA8yMTI2MTAxMjEzMjQ0MlowGjEYMBYGA1UEAwwPVGVzdCBWZXJpZmllciAyMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/1ASOXipu1RPNFAFwgmNCmpj5wPSXefofccvzwVpGzi2d81WyDinVAFuXcP+9+1N0ODqysi9vdYCqz1o8gX80aNmMGQwHQYDVR0OBBYEFD5idDv14Qv8A7NDaFcrBWVbHRIZMB8GA1UdIwQYMBaAFD5idDv14Qv8A7NDaFcrBWVbHRIZMBQGA1UdEQQNMAuCCWxvY2FsaG9zdDAMBgNVHRMBAf8EAjAAMAoGCCqGSM49BAMCA0gAMEUCIGrsh+OO7qDSmdNhYy0wL8oZbNd6fBOWKBs1vE7iz3QiAiEAvAiIxfjQu1GLm3CwFQmnxH5W9aRl1bS5BT6BeETA6GM=',
+          privateKey:
+            'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgNbt3Q/Wls+Ugeov7xIhfVJDcWuqkUTjf0asRdCmhH/OhRANCAAT/UBI5eKm7VE80UAXCCY0KamPnA9Jd5+h9xy/PBWkbOLZ3zVbIOKdUAW5dw/737U3Q4OrKyL291gKrPWjyBfzR',
+        },
+      }
+
+      const output = document.getElementById('output')
+      const checked = (name) => document.querySelector(`input[name="${name}"]:checked`).value
+
+      for (const preset of document.querySelectorAll('[data-issuers]')) {
+        preset.onclick = () => {
+          const own = credentials[checked('credential')].issuer
+          document.getElementById('issuers').value = preset.dataset.issuers
+            .split(',')
+            .filter(Boolean)
+            .map((name) => (name === 'own' ? own : issuers.other))
+            .join(', ')
+        }
+      }
+
+      const bytes = (base64) => Uint8Array.from(atob(base64.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
+      const base64Url = (data) =>
+        btoa(String.fromCharCode(...new Uint8Array(data))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      const encodeJson = (value) => base64Url(new TextEncoder().encode(JSON.stringify(value)))
+
+      async function signedRequest(reader, authorizationRequest) {
+        const certificate = bytes(reader.certificate)
+        const clientId = `x509_hash:${base64Url(await crypto.subtle.digest('SHA-256', certificate))}`
+        const header = { alg: 'ES256', typ: 'oauth-authz-req+jwt', x5c: [reader.certificate] }
+        const payload = { ...authorizationRequest, client_id: clientId, expected_origins: [location.origin] }
+        const signingInput = `${encodeJson(header)}.${encodeJson(payload)}`
+
+        const key = await crypto.subtle.importKey('pkcs8', bytes(reader.privateKey), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign'])
+        // WebCrypto returns the raw r || s that JWS expects.
+        const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(signingInput))
+
+        return { request: `${signingInput}.${base64Url(signature)}` }
+      }
+
+      document.getElementById('request').onclick = async () => {
+        const trusted = document
+          .getElementById('issuers')
+          .value.split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+          // DCQL takes base64url, the app's fields take base64: accept either here.
+          .map((value) => base64Url(bytes(value)))
+
+        const query = {
+          id: 'credential',
+          ...credentials[checked('credential')].query,
+          ...(trusted.length ? { trusted_authorities: [{ type: 'aki', values: trusted }] } : {}),
+        }
+        const authorizationRequest = {
+          response_type: 'vp_token',
+          response_mode: 'dc_api',
+          nonce: crypto.randomUUID(),
+          dcql_query: { credentials: [query] },
+          client_metadata: {
+            vp_formats_supported: {
+              mso_mdoc: {},
+              'dc+sd-jwt': { 'sd-jwt_alg_values': ['ES256'], 'kb-jwt_alg_values': ['ES256'] },
+            },
+          },
+        }
+
+        const reader = verifiers[checked('signing')]
+        output.textContent = `Requesting…\n\n${JSON.stringify(query, null, 2)}`
+        try {
+          const response = await navigator.credentials.get({
+            mediation: 'required',
+            digital: {
+              requests: [
+                {
+                  protocol: reader ? 'openid4vp-v1-signed' : 'openid4vp-v1-unsigned',
+                  data: reader ? await signedRequest(reader, authorizationRequest) : authorizationRequest,
+                },
+              ],
+            },
+          })
+          output.textContent = `Response (${response.protocol}):\n\n${JSON.stringify(response.data, null, 2)}`
+        } catch (error) {
+          output.textContent = `${error.name}: ${error.message}`
+        }
+      }
+    </script>
+  </body>
+</html>
