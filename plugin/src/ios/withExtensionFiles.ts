@@ -10,6 +10,7 @@ import {
   extensionTargetName,
   getAppGroup,
   getExtensionBundleIdentifier,
+  getIdentityDocumentEntitlements,
   getKeychainAccessGroup,
 } from '../types'
 
@@ -21,6 +22,8 @@ import {
 export const allExtensionFiles = [
   'IdentityDocumentProviderExtension.swift',
   'DocumentRequestSession.swift',
+  'RawRequestSession.swift',
+  'WebOrigin.swift',
   'DigitalCredentialsRequestView.swift',
   'ExtensionFonts.swift',
   'Info.plist',
@@ -86,8 +89,7 @@ export const withExtensionFiles: ConfigPlugin<DigitalCredentialsApiPluginOptions
       fs.writeFileSync(
         path.join(targetDirectory, `${extensionTargetName}.entitlements`),
         plist.build({
-          'com.apple.developer.identity-document-services.document-provider.mobile-document-types':
-            options.ios?.documentTypes ?? [],
+          ...getIdentityDocumentEntitlements(options),
           'com.apple.security.application-groups': [getAppGroup(bundleIdentifier, options)],
           'keychain-access-groups': [`$(AppIdentifierPrefix)${getKeychainAccessGroup(bundleIdentifier, options)}`],
         })

@@ -11,6 +11,7 @@ import {
   extensionTargetName,
   getAppGroup,
   getExtensionBundleIdentifier,
+  getIdentityDocumentEntitlements,
   getKeychainAccessGroup,
 } from './types'
 
@@ -55,8 +56,7 @@ const withEasAppExtension: ConfigPlugin<DigitalCredentialsApiPluginOptions> = (c
                     'keychain-access-groups': [
                       `$(AppIdentifierPrefix)${getKeychainAccessGroup(bundleIdentifier, options)}`,
                     ],
-                    'com.apple.developer.identity-document-services.document-provider.mobile-document-types':
-                      options.ios?.documentTypes,
+                    ...getIdentityDocumentEntitlements(options),
                   },
                 },
               ],

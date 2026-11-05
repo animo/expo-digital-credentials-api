@@ -25,6 +25,13 @@ export type DigitalCredentialsApiPluginOptions = {
     documentTypes?: IosSupportedDocumentType[]
 
     /**
+     * The SD-JWT VC types (`vct` values) the wallet can provide from iOS 27.3, e.g. `urn:eudi:pid:1`,
+     * written into the `…verifiable-credential-types` entitlement. Omitted when empty, since the
+     * provisioning profile has to carry the entitlement too.
+     */
+    verifiableCredentialTypes?: string[]
+
+    /**
      * App group shared by the app and the provider extension, written into the entitlements and the
      * Info.plist of both targets.
      *
@@ -146,6 +153,20 @@ export function getExtensionBundleIdentifier(appBundleIdentifier: string, option
 
 export function getAppGroup(appBundleIdentifier: string, options: DigitalCredentialsApiPluginOptions) {
   return options.ios?.appGroup ?? `group.${appBundleIdentifier}`
+}
+
+export const verifiableCredentialTypesEntitlement =
+  'com.apple.developer.identity-document-services.document-provider.verifiable-credential-types'
+
+/** The identity document entitlements, the same on both targets. */
+export function getIdentityDocumentEntitlements(options: DigitalCredentialsApiPluginOptions) {
+  const verifiableCredentialTypes = options.ios?.verifiableCredentialTypes
+
+  return {
+    'com.apple.developer.identity-document-services.document-provider.mobile-document-types':
+      options.ios?.documentTypes ?? [],
+    ...(verifiableCredentialTypes?.length ? { [verifiableCredentialTypesEntitlement]: verifiableCredentialTypes } : {}),
+  }
 }
 
 export function getKeychainAccessGroup(appBundleIdentifier: string, options: DigitalCredentialsApiPluginOptions) {

@@ -8,7 +8,12 @@ import ExpoModulesCore
 /// leaves the app, and this package keeps no copy of it.
 struct DocumentRegistrationRecord: Record {
     @Field var documentIdentifier: String = ""
+    /// `mso_mdoc` registers ``documentType``, `dc+sd-jwt` ``verifiableCredentialTypes``.
+    @Field var format: String = "mso_mdoc"
     @Field var documentType: String = ""
+    @Field var verifiableCredentialTypes: [String] = []
+    /// Registered from iOS 27, and ignored before: the OS has no field for them.
+    @Field var supportedIssuerKeyIdentifiers: [String] = []
     @Field var supportedAuthorityKeyIdentifiers: [String] = []
     @Field var invalidationDate: Date?
 }
@@ -22,6 +27,12 @@ public final class DigitalCredentialsApiModule: Module {
         Function("isSupported") { () -> Bool in
             if #available(iOS 26.0, *) { return true }
             return false
+        }
+
+        /// Whether SD-JWT VCs can be registered and OpenID4VP requests answered: iOS 27.3, in a build
+        /// made with its SDK.
+        Function("isOpenId4VpSupported") { () -> Bool in
+            Self.isOpenId4VpSupported
         }
 
         AsyncFunction("getRegistrationStatus") { () -> String in
@@ -44,7 +55,7 @@ public final class DigitalCredentialsApiModule: Module {
 
             // Built up front: a value rejected halfway through must not leave the store emptied of
             // what it held before.
-            let registrations = try records.map { try $0.asMobileDocumentRegistration() }
+            let registrations = try records.map { try $0.asRegistration() }
 
             let store = IdentityDocumentProviderRegistrationStore()
             try await Self.removeAllRegistrations(from: store)
@@ -60,7 +71,7 @@ public final class DigitalCredentialsApiModule: Module {
                 throw UnsupportedIosVersionException()
             }
 
-            let registration = try record.asMobileDocumentRegistration()
+            let registration = try record.asRegistration()
             try await IdentityDocumentProviderRegistrationStore().addRegistration(registration)
         }
 
@@ -88,6 +99,11 @@ public final class DigitalCredentialsApiModule: Module {
             Bundle.main.object(forInfoDictionaryKey: "EXPO_DC_API_DOCUMENT_TYPES") as? [String]
         }
 
+        /// The same for the `…verifiable-credential-types` entitlement.
+        Function("getEntitledVerifiableCredentialTypes") { () -> [String]? in
+            Bundle.main.object(forInfoDictionaryKey: "EXPO_DC_API_VERIFIABLE_CREDENTIAL_TYPES") as? [String]
+        }
+
         /// Path of the app group container, in whichever process asks — so the app and the request
         /// UI can open the same database. Nothing of this package's own lives there.
         Function("getSharedContainerPath") { () -> String in
@@ -110,38 +126,39 @@ public final class DigitalCredentialsApiModule: Module {
             return String(data: encoded, encoding: .utf8) ?? "[]"
         }
 
-        /// Takes the same JSON encoded `{protocol, data}` object Android answers with, where `data`
-        /// is the ISO 18013-7 C.3 `{ "response": <base64url> }` response object.
-        ///
-        /// Only the `EncryptedResponse` inside it goes to the OS. iOS builds the response object
-        /// itself: whatever bytes are handed over here reach the website base64url encoded as the
-        /// C.3 `response` member. Passing the object would put a second `{ "response": ... }` around
-        /// the first, which the verifier receives as a response it cannot decrypt — the bytes it
-        /// base64url decodes are JSON, not the CBOR `EncryptedResponse` it is expecting.
+        /// Takes the same JSON encoded `{protocol, data}` object Android answers with. For
+        /// `org-iso-mdoc` only the `EncryptedResponse` inside the C.3 object goes to the OS, which
+        /// wraps it again itself.
         AsyncFunction("sendResponse") { (credentialResponse: String) in
             guard let encoded = credentialResponse.data(using: .utf8),
                 let response = try? JSONSerialization.jsonObject(with: encoded) as? [String: Any],
                 let protocolName = response["protocol"] as? String,
-                let data = response["data"]
+                let data = response["data"] as? [String: Any]
             else {
                 throw InvalidCredentialResponseException()
             }
 
-            guard protocolName == "org-iso-mdoc" else {
-                throw UnsupportedProtocolException(protocolName)
+            let session = try Self.session()
+            guard protocolName == session.exchangeProtocol else {
+                throw UnexpectedProtocolException((protocolName, session.exchangeProtocol))
             }
 
-            guard let encryptedResponse = (data as? [String: Any])?["response"] as? String,
+            if protocolName != "org-iso-mdoc" {
+                try session.respond(try JSONSerialization.data(withJSONObject: data))
+                return
+            }
+
+            guard let encryptedResponse = data["response"] as? String,
                 let responseData = Data(base64UrlEncoded: encryptedResponse)
             else {
                 throw InvalidIsoMdocResponseException()
             }
 
-            try Self.session().respond(responseData)
+            try session.respond(responseData)
         }
 
         Function("sendErrorResponse") { (_: String) in
-            // Annex C defines no error response, so declining is all the OS offers.
+            // The OS takes no error response for either protocol, so declining is all it offers.
             DcApiRequestSessionStore.current?.cancel()
         }
     }
@@ -170,6 +187,14 @@ public final class DigitalCredentialsApiModule: Module {
         }
     }
 
+    private static var isOpenId4VpSupported: Bool {
+        // See `RawRequestSession.swift` for the compiler check.
+        #if compiler(>=6.4.2)
+            if #available(iOS 27.3, *) { return true }
+        #endif
+        return false
+    }
+
     private static func session() throws -> DcApiRequestSession {
         guard let session = DcApiRequestSessionStore.current else { throw NoRequestException() }
         return session
@@ -178,11 +203,12 @@ public final class DigitalCredentialsApiModule: Module {
 
 @available(iOS 26.0, *)
 extension DocumentRegistrationRecord {
-    fileprivate func asMobileDocumentRegistration() throws -> MobileDocumentRegistration {
+    fileprivate func asRegistration() throws -> any IdentityDocumentRegistration {
         // Apple takes these as `Data`, and a value that is not base64 would silently drop out of the
         // `compactMap` below — turning a non-empty trust gate into no gate at all if it was the only
         // one.
-        for identifier in supportedAuthorityKeyIdentifiers where Data(base64Encoded: identifier) == nil {
+        for identifier in supportedIssuerKeyIdentifiers + supportedAuthorityKeyIdentifiers
+        where Data(base64Encoded: identifier) == nil {
             throw InvalidAuthorityKeyIdentifierException(identifier)
         }
 
@@ -192,11 +218,44 @@ extension DocumentRegistrationRecord {
             throw InvalidationDateInThePastException(ISO8601DateFormatter().string(from: invalidationDate))
         }
 
+        // An empty array means no reader-auth requirement, which is what lets unsigned requests
+        // surface this wallet in the picker.
+        let authorityKeyIdentifiers = supportedAuthorityKeyIdentifiers.compactMap { Data(base64Encoded: $0) }
+        let issuerKeyIdentifiers = supportedIssuerKeyIdentifiers.compactMap { Data(base64Encoded: $0) }
+
+        if format == "dc+sd-jwt" {
+            #if compiler(>=6.4.2)
+                if #available(iOS 27.3, *) {
+                    return VerifiableCredentialRegistration(
+                        verifiableCredentialTypes: verifiableCredentialTypes,
+                        supportedIssuerKeyIdentifiers: issuerKeyIdentifiers,
+                        supportedAuthorityKeyIdentifiers: authorityKeyIdentifiers,
+                        documentIdentifier: documentIdentifier,
+                        invalidationDate: invalidationDate
+                    )
+                }
+            #endif
+            throw UnsupportedFormatException(format)
+        }
+
+        guard format == "mso_mdoc" else { throw UnsupportedFormatException(format) }
+
+        // The iOS 27 SDK ships with Swift 6.4.
+        #if compiler(>=6.4)
+            if #available(iOS 27.0, *) {
+                return MobileDocumentRegistration(
+                    mobileDocumentType: documentType,
+                    supportedIssuerKeyIdentifiers: issuerKeyIdentifiers,
+                    supportedAuthorityKeyIdentifiers: authorityKeyIdentifiers,
+                    documentIdentifier: documentIdentifier,
+                    invalidationDate: invalidationDate
+                )
+            }
+        #endif
+
         return MobileDocumentRegistration(
             mobileDocumentType: documentType,
-            // An empty array means no reader-auth requirement, which is what lets unsigned requests
-            // surface this wallet in the picker.
-            supportedAuthorityKeyIdentifiers: supportedAuthorityKeyIdentifiers.compactMap { Data(base64Encoded: $0) },
+            supportedAuthorityKeyIdentifiers: authorityKeyIdentifiers,
             documentIdentifier: documentIdentifier,
             invalidationDate: invalidationDate
         )
@@ -256,8 +315,14 @@ internal final class InvalidIsoMdocResponseException: Exception {
     }
 }
 
-internal final class UnsupportedProtocolException: GenericException<String> {
+internal final class UnexpectedProtocolException: GenericException<(String, String)> {
     override var reason: String {
-        "iOS can only answer 'org-iso-mdoc' requests, not '\(param)'"
+        "The request came in over '\(param.1)', so it cannot be answered over '\(param.0)'"
+    }
+}
+
+internal final class UnsupportedFormatException: GenericException<String> {
+    override var reason: String {
+        "'\(param)' credentials cannot be registered on this version of iOS"
     }
 }

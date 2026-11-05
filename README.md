@@ -45,13 +45,13 @@
 
 An [Expo Module](https://docs.expo.dev/modules/overview/) to automatically set up and configure the [Digital Credentials API](https://digitalcredentials.dev) for Android and iOS in Expo apps.
 
-This library is tested with **Expo 55** and **React Native 0.83**.
+This library is tested with **Expo 58** and **React Native 0.88**.
 
 | | Android | iOS |
 |---|---|---|
 | Protocol `openid4vp` | ✅ | ❌ (not supported by the platform) |
 | Protocol `org-iso-mdoc` (ISO/IEC TS 18013-7:2025 Annex C) | ✅ | ✅ |
-| Protocol `openid4vp-v1-{unsigned,signed,multisigned}` | ✅  | ❌ |
+| Protocol `openid4vp-v1-{unsigned,signed,multisigned}` | ✅  | ✅ from iOS 27.3, built with the iOS 27.3 SDK |
 | Minimum OS version | Credential Manager with registry support | iOS 26 |
 | Credential matching | wasm matcher bundled with this library | performed by the OS |
 
@@ -106,6 +106,7 @@ Both platforms render the same React component from its own bundle, configured w
 |---|---|---|
 | `entry` | `dc-api/index` | Bundle root of the request UI, relative to the project root and without extension. Metro resolves platform variants, so `dc-api/index.ios.tsx` works. |
 | `ios.documentTypes` | — | Document types for the `…identity-document-services.document-provider.mobile-document-types` entitlement, from Apple's [allowed set](#supported-document-types). **The iOS extension is only generated when this is set.** |
+| `ios.verifiableCredentialTypes` | none | SD-JWT VC types (`vct` values) for the `…identity-document-services.document-provider.verifiable-credential-types` entitlement, e.g. `urn:eudi:pid:1`. On iOS 27.3 and later the `dc+sd-jwt` credentials of these types are registered, and the wallet answers OpenID4VP requests for them. Left out of the entitlements when empty. See [Verifiable credential types](#verifiable-credential-types). |
 | `ios.excludedPackages` | see below | React Native or Expo packages with native code to leave out of the extension's autolinking, by npm package name.|
 | `ios.includedPackages` | — | The inverse: link only these React Native or Expo packages, leave out everything else. Setting both throws. |
 | `ios.appGroup` | `group.<bundleId>` | App group shared by the app and the extension. This package stores nothing in it by default, but it provides a storage directory accessible by both the main application and the DC API app extension. See [Sharing storage with the request UI](#sharing-storage-with-the-request-ui). |
@@ -202,6 +203,23 @@ above — is what registration filters on: a credential whose document type the 
 is rejected by the OS, so it is skipped before it gets there. Everything else is filtered out too, so
 the same registration flow works on both platforms. See [Apple Documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.identity-document-services.document-provider.mobile-document-types) for more information.
 
+#### Verifiable credential types
+
+From iOS 27.3 the OS also matches SD-JWT VCs, for OpenID4VP requests. Your app is entitled to the
+`vct` values you list in `ios.verifiableCredentialTypes`. Apple publishes no allowed set, and its
+documentation names `urn:eudi:pid:1`, for an EU PID. A credential is registered by its `vct` and its
+`extendedVcts`, keeping the ones the app is entitled to, and skipped when none are. See
+[Apple Documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.identity-document-services.document-provider.verifiable-credential-types)
+for more information.
+
+The OpenID4VP support is compiled in when the app is built with Xcode 27.3 or later. Older Xcode
+versions build the extension without it.
+
+> [!WARNING]
+> Provisioning profiles can't carry the `…verifiable-credential-types` entitlement yet, so a signed
+> build that sets `ios.verifiableCredentialTypes` fails to sign. Simulator builds are not checked
+> against a profile.
+
 ## Usage
 
 ### Registering credentials
@@ -266,15 +284,17 @@ async function syncRegisteredCredentials() {
     android: { matcher: "multipaz" },
   });
 
-  // ['mdl', 'pid'] on Android, ['mdl'] on iOS — the SD-JWT cannot be presented there.
+  // ['mdl', 'pid'] on Android and iOS 27.3, ['mdl'] on earlier iOS: the SD-JWT cannot be
+  // presented there.
   console.log(registered);
 }
 ```
 
 Credentials the platform cannot present are skipped rather than rejected, so you can pass the whole set
 on both platforms. On iOS only `mso_mdoc` credentials with a document type the app is entitled to —
-the plugin's [`ios.documentTypes`](#supported-document-types) — register. The returned ids say which
-did.
+the plugin's [`ios.documentTypes`](#supported-document-types) — register, and from iOS 27.3
+`dc+sd-jwt` credentials with a type in [`ios.verifiableCredentialTypes`](#verifiable-credential-types).
+The returned ids say which did.
 
 **On iOS the credentials never leave your app.** Only the identifier, document type and the `ios`
 gates are handed over, and nothing is kept. The registered ids are how you find your own credentials
@@ -321,9 +341,9 @@ leaves credentials showing twice.
 
 The two platforms match in different places, so they need different things from you.
 
-On iOS the OS does the matching, and Apple's registration record has four fields: the document
-identifier, the document type, the authority key identifiers from
-`ios.supportedAuthorityKeyIdentifiers` and the `ios.invalidationDate`. That is all the OS gets. No
+On iOS the OS does the matching, and Apple's registration record has five fields: the document
+identifier, the document type (the credential types for an SD-JWT VC), the issuer and reader
+[authority key identifiers](#trusting-issuers-and-readers) and the `ios.invalidationDate`. That is all the OS gets. No
 display metadata, no namespaces, no element identifiers and no claim values. The credentials stay in
 your own storage, and this package keeps no copy of them.
 
@@ -342,69 +362,48 @@ reaches the picker.
 |  | iOS | Android |
 |---|---|---|
 | Where matching happens | in the OS | in the wasm matcher, in a sandbox |
-| What leaves the app | identifier, document type, trust gate, expiry | display metadata, claim values, issuer and reader identifiers |
+| What leaves the app | identifier, document type, issuer and reader identifiers, expiry | display metadata, claim values, issuer and reader identifiers |
 | Matched on | document type | individual claims |
-| Formats | `mso_mdoc` with an [allowed document type](#supported-document-types) | anything the matcher supports |
+| Formats | `mso_mdoc` with an [allowed document type](#supported-document-types), and from iOS 27.3 `dc+sd-jwt` with an [entitled type](#verifiable-credential-types) | anything the matcher supports |
 | Registered set | added to and removed from per credential | replaced on every call |
 
 So on iOS a request the user picked your wallet for can still be one you cannot answer. Handle that
 in the request UI instead of assuming the OS filtered it out.
 
-#### Trusting readers on iOS
+#### Trusting issuers and readers
 
-`ios.supportedAuthorityKeyIdentifiers` is a trust gate the OS applies while matching, before the
-wallet is involved. Each entry is the base64 encoding of one X.509 authority key identifier, belonging
-to an authority you trust to sign requests.
+Two options on the credential gate matching on both platforms. Both take base64 X.509 authority key
+identifiers, and values that are not valid base64 throw.
 
-| Value | Which requests reach the wallet |
+| Option | What it does |
 |---|---|
-| `[]` (the default) | Every request, signed or not. Trust decisions are yours to make in the request UI, from `readerAuthentications`. |
-| Non-empty | Only requests whose reader authentication chains up to one of these authorities. Everything else, unsigned requests included, is never matched, and the user sees no entry for your wallet. |
-
-The OS stores it with each document, so it is set on the credential:
+| `issuerAuthorityKeyIdentifiers` | The authority key identifier of every certificate in the credential's issuer chain: the MSO's `x5chain` for an mdoc, the `x5c` header for an SD-JWT VC. A verifier can name the issuers it accepts, as `trusted_authorities` of type `aki` in DCQL or as `issuerIdentifiers` in an Annex C `deviceRequest`. A credential registered with issuer identifiers only matches if it carries one of them. Registered without, it still matches on iOS, but never on Android. |
+| `supportedAuthorityKeyIdentifiers` | Reader gating. Empty (the default) matches every request, signed or not, and trust decisions are yours to make in the request UI. When set, the credential only matches requests whose reader certificate chain carries one of these: a signed OpenID4VP request, or a `deviceRequest` with `readerAuth`. Unsigned requests never match, and the user sees no entry for your wallet. |
 
 ```ts
 await registerCredentials({
   credentials: [
     // Any reader may ask for this one.
     mdl,
-    // This one only goes to readers the government signed for.
-    { ...healthCard, ios: { supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"] } },
-  ],
-});
-```
-
-Values that are not valid base64 throw.
-
-#### Trusting issuers and readers on Android
-
-The `multipaz` matcher has two gates of its own, set on the credential under `android`. Both take
-base64 X.509 authority key identifiers, like the iOS gate. The matcher only compares identifiers. It
-verifies no signature and no chain, so check what reaches the request UI there too.
-
-| Option | What it does |
-|---|---|
-| `issuerAuthorityKeyIdentifiers` | The authority key identifier of every certificate in the credential's issuer chain: the MSO's `x5chain` for an mdoc, the `x5c` header for an SD-JWT VC. A verifier can name the issuers it accepts, as `trusted_authorities` of type `aki` in DCQL or as `issuerIdentifiers` in an Annex C `deviceRequest`, and the matcher then only offers credentials carrying one of them. **A credential registered without these never matches such a request.** |
-| `supportedAuthorityKeyIdentifiers` | Reader gating, like `ios.supportedAuthorityKeyIdentifiers`. When set, the credential only matches requests whose reader certificate chain carries one of these: the `x5c` of a signed OpenID4VP request, or the `readerAuth` of a `deviceRequest`. Unsigned requests never match. |
-
-```ts
-await registerCredentials({
-  credentials: [
     {
       ...pid,
-      android: {
-        // Matches verifiers that only accept PIDs from this issuer.
-        issuerAuthorityKeyIdentifiers: ["N1OrmtAijM/4g9xcF7evzmkzXVs="],
-        // Only offered to readers the government signed for.
-        supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"],
-      },
+      // Matches verifiers that only accept PIDs from this issuer.
+      issuerAuthorityKeyIdentifiers: ["N1OrmtAijM/4g9xcF7evzmkzXVs="],
+      // Only offered to readers the government signed for.
+      supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"],
     },
   ],
 });
 ```
 
-The other matchers ignore `trusted_authorities`, so they have no use for the issuer identifiers. They
-cannot gate on the reader either, and registering `supportedAuthorityKeyIdentifiers` with them throws.
+The platforms differ in who applies them:
+
+- **iOS.** The OS stores both with each document and applies them while matching. Issuer identifiers
+  are registered from iOS 27 and ignored before.
+- **Android.** Only the `multipaz` matcher reads them, and it only compares identifiers. It verifies
+  no signature and no chain, so check what reaches the request UI there too. The other matchers ignore
+  `trusted_authorities`, so they have no use for issuer identifiers. They cannot gate on the reader
+  either, and registering `supportedAuthorityKeyIdentifiers` with them throws.
 
 #### Payments on Android
 
@@ -515,20 +514,26 @@ The request UI always runs the bundle it was built with, so it has nothing to up
 
 #### Handling the request
 
-The registered component gets `request: DcApiRequest`, a union on `platform`, since the platforms
-know different things at this point:
+The registered component gets `request: DcApiRequest`, a union on `kind`, since requests carry
+different things at this point:
 
-- **Android** delivers the protocol requests with the picker result, along with the credentials the
-  user chose. Nothing is parsed for you: read the OpenID4VP request or Annex C `deviceRequest` with
-  whatever stack you already use.
-- **iOS** has no picker and holds the raw request back until you commit. Up front you get the request
-  *as the OS parsed it* (which documents, which elements), and render consent and credential
-  selection from that. `approve()` then releases the real thing, always Annex C.
+- **`kind: "raw"`** carries the protocol requests themselves. Nothing is parsed for you: read the
+  OpenID4VP request or Annex C `deviceRequest`, reader authentication included, with whatever stack
+  you already use. The same code handles both platforms.
+  - On **Android** they come with the picker result, along with the credentials the user chose.
+  - On **iOS 27.3** and later there is one request, the one the user picked your wallet for, and no
+    picker: you select the credentials yourself.
+- **`kind: "parsed"`** is an Annex C request before iOS 27.3. The OS holds the raw request back until
+  you commit. Up front you get the request *as the OS parsed it* (which documents, which elements),
+  and render consent and credential selection from that. `approve()` then releases the real thing.
+
+`platform` tells the platforms apart for what only one of them has, such as Android's `selection`.
 
 ```ts
 type DcApiRequest =
   | {
       platform: "android";
+      kind: "raw";
       origin: string | undefined;
       callingPackage: string;
       requests: DcApiProtocolRequest[];
@@ -542,6 +547,15 @@ type DcApiRequest =
     }
   | {
       platform: "ios";
+      kind: "raw";
+      origin: string;
+      requests: DcApiProtocolRequest[];
+      respond(options: DcApiResponseOptions): Promise<void>;
+      decline(reason?: string): void;
+    }
+  | {
+      platform: "ios";
+      kind: "parsed";
       origin: string;
       presentmentRequests: IosPresentmentRequest[];
       readerAuthentications: { certificateChain: string[] }[];
@@ -551,43 +565,45 @@ type DcApiRequest =
     };
 ```
 
-| Prop | Platform | Description |
+`DcApiRawRequest` is the union of the two raw variants.
+
+| Prop | Request | Description |
 |---|---|---|
-| `origin` | both | WHATWG ASCII serialization of the requesting website origin, always from the OS. On Android it is `undefined` when a native app asked for itself. See [below](#when-there-is-no-origin). |
-| `callingPackage` | Android | The package that made the request, e.g. `com.android.chrome`. |
-| `requests` | Android | The [protocol requests](#protocol-requests) the verifier sent, in its order. Protocols this package does not know are left out, so this can be empty. |
-| `selection` | Android | What the user picked in the system picker: the credentials, and the request they were matched against. `undefined` when the request did not come through the picker. See [what was picked](#what-was-picked). |
-| `presentmentRequests` | iOS | [What the OS parsed](#the-parsed-request-ios) out of the request: documents, elements, and their `intentToRetain`. |
-| `readerAuthentications` | iOS | The reader authentications the request carried, each with its certificate chain as base64 DER. Empty when the request was not signed. |
+| `origin` | all | WHATWG ASCII serialization of the requesting website origin, always from the OS. On Android it is `undefined` when a native app asked for itself. See [below](#when-there-is-no-origin). |
+| `requests` | raw | The [protocol requests](#protocol-requests) the verifier sent, in its order. Protocols this package does not know are left out, so this can be empty. On iOS it holds at most one. |
+| `callingPackage` | raw, Android | The package that made the request, e.g. `com.android.chrome`. |
+| `selection` | raw, Android | What the user picked in the system picker: the credentials, and the request they were matched against. `undefined` when the request did not come through the picker. See [what was picked](#what-was-picked). |
+| `presentmentRequests` | parsed | [What the OS parsed](#the-parsed-request-ios) out of the request: documents, elements, and their `intentToRetain`. |
+| `readerAuthentications` | parsed | The reader authentications the request carried, each with its certificate chain as base64 DER. Empty when the request was not signed. |
 
 | Method | Platform | Behaviour |
 |---|---|---|
-| `approve()` | iOS | Commits to answering, and resolves with the protocol request the OS then releases. Always exactly one `org-iso-mdoc` request, in the same shape Android's `requests` has. Call it after the user approved. On iOS this is the point of no return. |
-| `respond({ protocol, data })` | both | Completes the request. See [responding](#responding). Rejects once the request was answered or declined. A response that failed can be retried, or declined. |
-| `decline(reason?)` | both | Declines. The reason is for logs, and the OS decides what the verifier sees. Does nothing once the request was answered or declined. |
+| `approve()` | parsed | Commits to answering, and resolves with the protocol request the OS then releases. Always exactly one `org-iso-mdoc` request, in the same shape Android's `requests` has. Call it after the user approved. |
+| `respond({ protocol, data })` | all | Completes the request. See [responding](#responding). Rejects once the request was answered or declined. A response that failed can be retried, or declined. |
+| `decline(reason?)` | all | Declines. The reason is for logs, and the OS decides what the verifier sees. Does nothing once the request was answered or declined. |
 
 ##### Protocol requests
 
-Both platforms describe a request the same way. Android's `request.requests` and what iOS's
-`approve()` resolves with are the same `DcApiProtocolRequest[]`.
+Every request describes its protocol requests the same way. A raw request's `requests` and what a
+parsed request's `approve()` resolves with are the same `DcApiProtocolRequest[]`.
 
 ```ts
 type DcApiProtocolRequest =
   // openid4vp | openid4vp-v1-unsigned | openid4vp-v1-signed | openid4vp-v1-multisigned
-  | { protocol: Openid4vpProtocol; data: string }
+  | { protocol: Openid4vpProtocol; data: Record<string, unknown> }
   | { protocol: "org-iso-mdoc"; data: { deviceRequest: string; encryptionInfo: string } };
 ```
 
 | Protocol | `data` | Platform |
 |---|---|---|
-| `openid4vp` | The OpenID4VP authorization request, as a JSON string. The draft protocol identifier. | Android |
-| `openid4vp-v1-unsigned` | Same, for an unsigned OpenID4VP 1.0 request. | Android |
-| `openid4vp-v1-signed` | Same, for a signed request. Verify the signature before trusting anything in it. | Android |
-| `openid4vp-v1-multisigned` | Same, for a request carrying more than one signature. | Android |
+| `openid4vp` | The draft protocol identifier, with the unsigned or signed shape below. | Android |
+| `openid4vp-v1-unsigned` | The request parameters themselves, e.g. `{ response_type, nonce, dcql_query, … }`. | Android, iOS 27.3 |
+| `openid4vp-v1-signed` | `{ request }`, a compact JWS. Verify the signature before trusting anything in it. | Android, iOS 27.3 |
+| `openid4vp-v1-multisigned` | `{ payload, signatures }`, a JWS JSON serialization with one signature per client identifier. | Android, iOS 27.3 |
 | `org-iso-mdoc` | ISO/IEC TS 18013-7:2025 C.2: `deviceRequest` and `encryptionInfo`, both base64url-no-pad encoded CBOR. | both |
 
-Chrome is inconsistent about whether `data` arrives as a string or an object. Android normalizes it
-to the table above before it reaches JS. `org-iso-mdoc` is the only protocol iOS speaks.
+Chrome sometimes sends `data` JSON encoded. Android parses it before it reaches JS, and drops an entry
+whose `data` is no JSON object. iOS hands over the same shapes.
 
 ##### What was picked
 
@@ -719,9 +735,9 @@ type DcApiResponseOptions =
 | `openid4vp*` | The OpenID4VP authorization response. What goes in it is OpenID4VP's business: `{ vp_token: … }`, or `{ response: "<JWE>" }` when the request asked for encryption. |
 | `org-iso-mdoc` | The ISO/IEC TS 18013-7:2025 C.3 response: `{ response: "<base64url-no-pad EncryptedResponse>" }`. |
 
-The types enforce which protocols you can answer: Android's `respond` takes either variant, iOS's only
-`org-iso-mdoc`, so an un-narrowed `DcApiRequest` does too. Narrow on `platform` before answering
-OpenID4VP.
+The types enforce which protocols you can answer: a parsed request takes only `org-iso-mdoc`, so an
+un-narrowed `DcApiRequest` does too. Narrow on `kind` before answering OpenID4VP. On iOS a raw
+request has to be answered over the protocol it came in over, or `respond` rejects.
 
 Answering or declining closes the request UI. On Android its process ends with it, which cuts off
 anything still running. Write what you need to keep, such as an activity log entry, before you call
@@ -732,47 +748,55 @@ anything still running. Write what you need to keep, such as an activity log ent
 Answering both protocols, on both platforms.
 
 ```tsx
-import type { DcApiRequest } from "@animo-id/expo-digital-credentials-api/request-handler";
+import type { DcApiProtocolRequest, DcApiRequest } from "@animo-id/expo-digital-credentials-api/request-handler";
 import { Button, View } from "react-native";
 
 export function MyCustomComponent({ request }: { request: DcApiRequest }) {
   const onShare = async () => {
-    if (request.platform === "android") {
-      // The picker delivered the request and matched credentials against it.
-      const { selection } = request;
-      if (!selection) return request.decline("the request did not come through the picker");
+    if (request.kind === "parsed") {
+      // iOS before 27.3 releases an Annex C request only once the wallet commits to answering it,
+      // so this belongs behind the user's approval.
+      const [isoMdoc] = await request.approve();
+      if (!isoMdoc) return request.decline("no protocol this wallet can answer");
 
-      // See "What was picked" for `matchedRequestIndex`.
-      const index = matchedRequestIndex(request);
-      const picked = index === undefined ? undefined : request.requests[index];
-      if (!picked) return request.decline("no protocol this wallet can answer");
-
-      // One credential per credential the request asks for, all answered in one response.
-      const { credentialIds } = selection;
-
-      if (picked.protocol !== "org-iso-mdoc") {
-        // An OpenID4VP authorization request, as a JSON string. Signed variants are a JWT —
-        // verify them before rendering or answering anything they contain.
-        const authorizationResponse = await buildOpenid4vpResponse(picked.data, request.origin, credentialIds);
-        return request.respond({ protocol: picked.protocol, data: authorizationResponse });
-      }
-
+      // There is no picker on iOS: the credentials are the ones your own screen matched against
+      // `presentmentRequests`.
       return request.respond({
         protocol: "org-iso-mdoc",
-        data: { response: await buildAnnexCResponse(picked.data, request.origin, credentialIds) },
+        data: { response: await buildAnnexCResponse(isoMdoc.data, request.origin, chosenCredentialIds) },
       });
     }
 
-    // iOS releases the request only once the wallet commits to answering it, so this belongs
-    // behind the user's approval — and what comes back is always Annex C.
-    const [isoMdoc] = await request.approve();
-    if (!isoMdoc) return request.decline("no protocol this wallet can answer");
+    // A raw request, the same on both platforms apart from the picker.
+    let picked: DcApiProtocolRequest | undefined;
+    let credentialIds: string[];
+    if (request.platform === "android") {
+      // The picker delivered the request and matched credentials against it. See "What was
+      // picked" for `matchedRequestIndex`.
+      if (!request.selection) return request.decline("the request did not come through the picker");
+      const index = matchedRequestIndex(request);
+      picked = index === undefined ? undefined : request.requests[index];
+      // One credential per credential the request asks for, all answered in one response.
+      credentialIds = request.selection.credentialIds;
+    } else {
+      // iOS hands over the one request the wallet was picked for, and has no picker: the
+      // credentials are the ones your own screen matched against the request.
+      picked = request.requests[0];
+      credentialIds = chosenCredentialIds;
+    }
+    if (!picked || !request.origin) return request.decline("no request this wallet can answer");
 
-    // There is no picker on iOS: the credentials are the ones your own screen matched against
-    // `presentmentRequests`.
+    if (picked.protocol !== "org-iso-mdoc") {
+      // An OpenID4VP authorization request object. Signed variants carry it as a JWT in `request`:
+      // verify it before rendering or answering anything it contains.
+      const authorizationResponse = await buildOpenid4vpResponse(picked.data, request.origin, credentialIds);
+      return request.respond({ protocol: picked.protocol, data: authorizationResponse });
+    }
+
+    // Verify `readerAuth` in the deviceRequest before trusting who is asking.
     return request.respond({
       protocol: "org-iso-mdoc",
-      data: { response: await buildAnnexCResponse(isoMdoc.data, request.origin, chosenCredentialIds) },
+      data: { response: await buildAnnexCResponse(picked.data, request.origin, credentialIds) },
     });
   };
 
@@ -803,6 +827,83 @@ An unverifiable origin never reaches you: a caller claiming an origin without be
 fails natively. On iOS `origin` is always a string, and requests without one are cancelled before
 your UI is shown.
 
+## Migrating to 0.8
+
+0.8 adds OpenID4VP on iOS 27.3, which changes how requests reach the request UI on iOS. It is tested
+with Expo 58 and React Native 0.88. The peer dependency ranges are unchanged.
+
+### Breaking change: requests are discriminated on `kind`
+
+From iOS 27.3 the OS hands over the raw request, for Annex C as well as OpenID4VP. There is nothing to
+`approve()` and no `presentmentRequests`: the request carries `requests`, like on Android. Requests
+before iOS 27.3, or from an app built with an Xcode older than 27.3, still arrive parsed.
+
+`DcApiRequest` is now a union on `kind`. Narrow on `kind` where you narrowed on `platform`:
+
+```diff
+-if (request.platform === "ios") {
++if (request.kind === "parsed") {
+   const [isoMdoc] = await request.approve();
+   // ...
+ }
+
+-// Android
++// Android, and iOS from 27.3
+ const picked = request.requests[0];
+```
+
+A wallet that only answers Annex C needs the raw branch on iOS too. It parses the `deviceRequest`
+itself, verifies `readerAuth` and picks the credentials from its own storage, as on Android. Keep
+narrowing on `platform` for what only Android has, such as `selection` and `callingPackage`. See
+[Putting it together](#putting-it-together) for the full flow.
+
+A raw request on iOS has to be answered over the protocol it came in over, or `respond` rejects.
+
+The types follow the same split. `IosDcApiRequest` is now `IosRawDcApiRequest | IosParsedDcApiRequest`,
+and the 0.7 shape is `IosParsedDcApiRequest`. `DcApiRawRequest` is the union of the two raw variants.
+
+### Breaking change: authority key identifiers moved to the credential
+
+`issuerAuthorityKeyIdentifiers` and `supportedAuthorityKeyIdentifiers` moved from `ios` and `android`
+to the credential itself, since both platforms support them. iOS now registers the issuer identifiers
+too, from iOS 27.
+
+```diff
+ {
+   ...pid,
+-  ios: { supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"] },
+-  android: {
+-    issuerAuthorityKeyIdentifiers: ["N1OrmtAijM/4g9xcF7evzmkzXVs="],
+-    supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"],
+-  },
++  issuerAuthorityKeyIdentifiers: ["N1OrmtAijM/4g9xcF7evzmkzXVs="],
++  supportedAuthorityKeyIdentifiers: ["Ej4mAJk…"],
+ }
+```
+
+### Breaking change: OpenID4VP request data is an object
+
+The `data` of an OpenID4VP protocol request used to be a JSON string. It is now the authorization
+request object on both platforms, so drop the parsing. Android drops an entry whose `data` is not a
+JSON object.
+
+```diff
+-const authorizationRequest = JSON.parse(request.data);
++const authorizationRequest = request.data;
+```
+
+### New: OpenID4VP on iOS 27.3
+
+- List the `vct` values your wallet provides in the config plugin's
+  [`ios.verifiableCredentialTypes`](#verifiable-credential-types). `registerCredentials` then
+  registers the `dc+sd-jwt` credentials of those types, matched on their `vct` and `extendedVcts`.
+- `isOpenId4VpSupported()` says whether this device and build can answer OpenID4VP. On Android it is
+  the same as `isSupported()`.
+- Answer the `openid4vp-v1-*` requests from the raw request, as on Android.
+
+It needs a build with Xcode 27.3 or later. Signed builds can't use it yet, since provisioning
+profiles don't carry the entitlement.
+
 ## Known issues
 
 One upstream bug affects the request UI, and a patch in [`patches/`](./patches) fixes it. Copy the
@@ -818,7 +919,7 @@ and is not one ([facebook/react-native#54642](https://github.com/facebook/react-
 
 [`react-native+0.83.10.patch`](./patches/react-native+0.83.10.patch) reads the text size from the
 current trait collection instead, which an extension does get from its host, and clamps anything
-unusable to `1.0`. The patched code is unchanged up to at least 0.85.3, so the patch applies as it is:
+unusable to `1.0`. The patched code is unchanged up to at least 0.88.1, so the patch applies as it is:
 rename it to your React Native version. It patches React Core sources, so React Native has to be built from source too.
 Against the prebuilt `React.xcframework` it is never compiled:
 
@@ -829,6 +930,12 @@ Against the prebuilt `React.xcframework` it is never compiled:
 ## Contributing
 
 Is there something you'd like to fix or add? Great, we love community contributions! To get involved, please follow our [contribution guidelines](https://github.com/animo/.github/blob/main/CONTRIBUTING.md).
+
+The [example app](./example) registers its credentials with or without their issuer identifiers, and
+for all readers or only for the test verifiers you pick. To request them, run `pnpm verifier` in
+`example/` and open `http://localhost:8765` on the device. The test verifier sends OpenID4VP requests,
+unsigned or signed by either test verifier, and trusting the credential's issuer or another one. On iOS,
+build with `DC_API_IOS_OPENID4VP=1` to register the SD-JWT PID. That only signs for the simulator.
 
 ## License
 

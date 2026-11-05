@@ -1,8 +1,8 @@
 /**
  * Protocols the Digital Credentials API can carry.
  *
- * The `openid4vp-v1-*` variants are what Chrome sends for OpenID4VP 1.0; `openid4vp` is the earlier
- * draft identifier. `org-iso-mdoc` is ISO/IEC TS 18013-7:2025 Annex C, the only protocol iOS speaks.
+ * The `openid4vp-v1-*` variants are OpenID4VP 1.0, `openid4vp` the earlier draft identifier, and
+ * `org-iso-mdoc` ISO/IEC TS 18013-7:2025 Annex C. iOS speaks the `openid4vp-v1-*` ones from 27.3.
  */
 export const dcApiProtocols = [
   'openid4vp',
@@ -19,9 +19,10 @@ export interface Openid4vpProtocolRequest {
   protocol: Openid4vpProtocol
 
   /**
-   * The OpenID4VP authorization request as a JSON string.
+   * The OpenID4VP authorization request (OpenID4VP 1.0 Appendix A.3): the parameters when unsigned,
+   * `{ request }` when signed, `{ payload, signatures }` when multi-signed.
    */
-  data: string
+  data: Record<string, unknown>
 }
 
 export interface IsoMdocProtocolRequest {
@@ -88,6 +89,7 @@ interface DcApiRequestActions<Response extends DcApiResponseOptions = DcApiRespo
 
 export interface AndroidDcApiRequest extends DcApiRequestActions {
   platform: 'android'
+  kind: 'raw'
 
   /**
    * WHATWG ASCII serialization of the requesting website origin, e.g.
@@ -226,21 +228,38 @@ export interface IosReaderAuthentication {
    * returned it.
    *
    * Whether an unsigned request reaches the wallet at all is decided at registration time by
-   * {@link RegisterCredentialsOptions.ios.supportedAuthorityKeyIdentifiers}.
+   * {@link DcApiCredential.supportedAuthorityKeyIdentifiers}.
    */
   certificateChain: string[]
 }
 
-export interface IosDcApiRequest extends DcApiRequestActions<IsoMdocResponseOptions> {
+/**
+ * A request on iOS 27.3 or later, handed over in full as on Android but without a picker selection.
+ * The wallet picks the answering credentials from its own storage.
+ */
+export interface IosRawDcApiRequest extends DcApiRequestActions {
   platform: 'ios'
+  kind: 'raw'
 
   /**
    * WHATWG ASCII serialization of the requesting website origin. See
    * {@link AndroidDcApiRequest.origin}.
    *
-   * Always present, unlike on Android: iOS binds the origin into both the raw request validation and
-   * the session transcript, so a request the OS reports no origin for cannot be answered at all and
-   * is cancelled before the request UI is shown.
+   * Always present, unlike on Android: a request without one is cancelled before the UI is shown.
+   */
+  origin: string
+
+  /** The one protocol request this wallet was picked for, or none when this package does not know its protocol. */
+  requests: DcApiProtocolRequest[]
+}
+
+/** An Annex C request before iOS 27.3: what the OS parsed, until the wallet approves. */
+export interface IosParsedDcApiRequest extends DcApiRequestActions<IsoMdocResponseOptions> {
+  platform: 'ios'
+  kind: 'parsed'
+
+  /**
+   * WHATWG ASCII serialization of the requesting website origin. See {@link IosRawDcApiRequest.origin}.
    */
   origin: string
 
@@ -261,23 +280,24 @@ export interface IosDcApiRequest extends DcApiRequestActions<IsoMdocResponseOpti
   /**
    * Commit to answering the request, and get the protocol request to answer.
    *
-   * iOS only: the OS holds the raw request back until the wallet commits, so this must be called
-   * after the user approved. On Android the requests are on the request itself from the start.
-   *
-   * Always resolves with exactly one `org-iso-mdoc` request — the only protocol iOS speaks — in the
-   * same shape {@link AndroidDcApiRequest.requests} has.
+   * Call it only after the user approved: the OS releases the raw request when the wallet commits.
+   * Resolves with exactly one `org-iso-mdoc` request.
    */
   approve(): Promise<IsoMdocProtocolRequest[]>
 }
 
+export type IosDcApiRequest = IosRawDcApiRequest | IosParsedDcApiRequest
+
+/** A request that carries the protocol requests themselves: on Android, and on iOS from 27.3. */
+export type DcApiRawRequest = AndroidDcApiRequest | IosRawDcApiRequest
+
 /**
  * An incoming credential request, as passed to the component registered with `registerDcApiScreen`.
  *
- * A union discriminated on `platform`, because the platforms genuinely know different things before
- * the user approves: Android delivers the request with the picker result, iOS a parsed summary of it
- * and nothing more until {@link IosDcApiRequest.approve} is called.
+ * Discriminated on `kind` (see {@link DcApiRawRequest} and {@link IosParsedDcApiRequest}), and on
+ * `platform` for what only one platform has.
  */
-export type DcApiRequest = AndroidDcApiRequest | IosDcApiRequest
+export type DcApiRequest = DcApiRawRequest | IosParsedDcApiRequest
 
 /**
  * The wasm matcher Credential Manager runs to match registered credentials against a request.
@@ -292,30 +312,9 @@ export type DcApiRequest = AndroidDcApiRequest | IosDcApiRequest
 export type DcApiMatcher = 'multipaz' | 'cmwallet' | 'ubique'
 
 /**
- * How the OS should treat one document. iOS only: Android's matcher has gates of its own, see
- * {@link AndroidRegistrationOptions}.
- *
- * Set on {@link DcApiCredential.ios}, since Apple stores both with each document
- * ({@link https://developer.apple.com/documentation/identitydocumentservices/mobiledocumentregistration | `MobileDocumentRegistration`}).
+ * How the OS should treat one document. iOS only.
  */
 export interface IosRegistrationOptions {
-  /**
-   * Reader-auth trust gating, applied by the OS while matching — before the wallet is involved at
-   * all. Each entry is the base64 encoding of one X.509 authority key identifier — Apple takes
-   * these as `Data` (`MobileDocumentRegistration.supportedAuthorityKeyIdentifiers`) — belonging to
-   * an authority the wallet trusts to sign requests.
-   *
-   * - **Empty (the default).** Every request matches, signed or not. The wallet decides what to
-   *   do with {@link IosDcApiRequest.readerAuthentications} itself, including doing nothing.
-   * - **Non-empty.** Only requests whose reader authentication chains up to one of these
-   *   authorities match. Everything else — including unsigned requests — never reaches the
-   *   wallet, and the user sees no entry for it.
-   *
-   * On Android, {@link AndroidRegistrationOptions.supportedAuthorityKeyIdentifiers} does the same
-   * with the `multipaz` matcher.
-   */
-  supportedAuthorityKeyIdentifiers?: string[]
-
   /**
    * When the registration stops being valid (`MobileDocumentRegistration.invalidationDate`). Past
    * it the OS no longer matches the document, so the wallet is not offered for it — without the
@@ -371,7 +370,7 @@ export interface RegisterCredentialOptions {
  * How the credential is drawn in the system credential picker.
  *
  * Android only. iOS has no system picker. What the user sees on iOS is the
- * wallet's own request UI, drawn from {@link IosDcApiRequest.presentmentRequests}
+ * wallet's own request UI, drawn from {@link IosParsedDcApiRequest.presentmentRequests}
  * and the wallet's own storage.
  */
 export interface DcApiCredentialDisplay {
@@ -427,7 +426,7 @@ export interface DcApiMdocCredential {
    * Android only, where they become the claim database the matcher queries. iOS registers
    * {@link doctype} alone and matches on that, so a verifier asking for an element surfaces every
    * registered document of that type, including one that does not carry it — see
-   * {@link IosDcApiRequest.presentmentRequests}.
+   * {@link IosParsedDcApiRequest.presentmentRequests}.
    */
   namespaces: Record<string, Record<string, DcApiClaimValue>>
 }
@@ -437,8 +436,8 @@ export type SdJwtClaims = {
 }
 
 /**
- * Android only: iOS registers `mso_mdoc` documents alone, and {@link registerCredentials} skips
- * these there rather than rejecting them.
+ * Registered on iOS from 27.3, when its `vct` or one of its {@link extendedVcts} is in the config
+ * plugin's `ios.verifiableCredentialTypes`. {@link claims} are Android only.
  */
 export interface DcApiSdJwtCredential {
   format: 'dc+sd-jwt'
@@ -447,7 +446,7 @@ export interface DcApiSdJwtCredential {
   /**
    * The vcts the credential's type extends, from the `extends` chain of its type metadata. A request
    * for one of them matches the credential too, as it would when the wallet resolves the request
-   * itself. Only the `multipaz` matcher reads this.
+   * itself. On Android only the `multipaz` matcher reads this.
    */
   extendedVcts?: string[]
 
@@ -470,6 +469,25 @@ export interface DcApiCredential {
   credential: DcApiMdocCredential | DcApiSdJwtCredential
 
   /**
+   * The base64 encoded X.509 authority key identifiers of the credential's issuer chain (the mdoc's
+   * `x5chain`, the SD-JWT's `x5c`), matched against the issuers a verifier names in DCQL
+   * `trusted_authorities` or Annex C `issuerIdentifiers`.
+   *
+   * Without them the credential still matches such requests on iOS, but not with the `multipaz`
+   * matcher on Android. Read on iOS from 27, and on Android by `multipaz` only.
+   */
+  issuerAuthorityKeyIdentifiers?: string[]
+
+  /**
+   * Base64 encoded X.509 authority key identifiers of the readers trusted to ask. When set, only
+   * signed requests chaining up to one of them match. Empty (the default) matches every request.
+   *
+   * Applied by the OS on iOS and by the `multipaz` matcher on Android, which compares identifiers
+   * only, so the request UI still verifies the signature. Other Android matchers throw.
+   */
+  supportedAuthorityKeyIdentifiers?: string[]
+
+  /**
    * Gates the OS applies to this credential while matching. iOS only, and ignored on Android.
    */
   ios?: IosRegistrationOptions
@@ -482,38 +500,8 @@ export interface DcApiCredential {
 
 /**
  * How the Android matcher should treat one credential. Only the `multipaz` matcher reads these.
- *
- * Both take the base64 encoding of X.509 authority key identifiers, as
- * {@link IosRegistrationOptions.supportedAuthorityKeyIdentifiers} does. The matcher only compares
- * identifiers: it verifies no signature and no chain, so what it lets through still has to be
- * checked in the request UI.
  */
 export interface AndroidRegistrationOptions {
-  /**
-   * The authority key identifier of every certificate in the credential's issuer chain: the MSO's
-   * `x5chain` for an mdoc, the `x5c` header for an SD-JWT VC.
-   *
-   * A verifier can name the issuers it accepts, as `trusted_authorities` of type `aki` in a DCQL
-   * credential query or as `issuerIdentifiers` in an Annex C `deviceRequest`. The matcher then only
-   * offers credentials carrying one of those identifiers, so a credential registered without them
-   * never matches such a request. Requests that name no issuers match either way.
-   */
-  issuerAuthorityKeyIdentifiers?: string[]
-
-  /**
-   * Reader-auth gating, the Android counterpart of
-   * {@link IosRegistrationOptions.supportedAuthorityKeyIdentifiers}.
-   *
-   * - **Empty (the default).** Every request matches, signed or not.
-   * - **Non-empty.** Only requests whose reader certificate chain carries one of these authority
-   *   key identifiers match: the `x5c` of a signed OpenID4VP request, or the `readerAuth` of an
-   *   Annex C `deviceRequest`. Unsigned requests never match, and the user sees no entry for them.
-   *
-   * Registering these with any matcher other than `multipaz` throws, since it would silently offer
-   * the credential to every reader.
-   */
-  supportedAuthorityKeyIdentifiers?: string[]
-
   /**
    * The OpenID4VP `transaction_data` types the credential can authorize, such as
    * `urn:paso:sca:global:payment:1`.

@@ -15,7 +15,7 @@ vi.mock('../nativeModule', () => ({
 import { parseRequest } from '../request'
 import type { AndroidDcApiRequest, IosPresentmentRequest } from '../types'
 
-const openid4vpRequest = { protocol: 'openid4vp', data: '{"dcql_query":{}}' }
+const openid4vpRequest = { protocol: 'openid4vp', data: { dcql_query: {} } }
 const isoMdocRequest = {
   protocol: 'org-iso-mdoc',
   data: { deviceRequest: 'ZGV2', encryptionInfo: 'ZW5j' },
@@ -54,6 +54,7 @@ const presentmentRequests: IosPresentmentRequest[] = [
 
 const iosRequest = {
   platform: 'ios' as const,
+  kind: 'parsed' as const,
   origin: 'https://digital-credentials.dev',
   presentmentRequests,
   readerAuthentications: [{ certificateChain: ['MIIB...'] }],
@@ -122,7 +123,7 @@ describe('parseRequest, on android', () => {
     const request = parseRequest({
       ...androidRequest,
       matcher: 'cmwallet',
-      requests: [{ protocol: 'openid4vp-v2-not-a-thing', data: '{}' }, isoMdocRequest, openid4vpRequest],
+      requests: [{ protocol: 'openid4vp-v2-not-a-thing', data: {} }, isoMdocRequest, openid4vpRequest],
       selectedEntryIds: [JSON.stringify({ provider_idx: 2, id: 'pid-1' })],
     })
 
@@ -130,6 +131,16 @@ describe('parseRequest, on android', () => {
       requests: [isoMdocRequest, openid4vpRequest],
       selection: { requestIndex: 1 },
     })
+  })
+
+  test('drops a request whose data is not an object', () => {
+    const request = parseRequest({
+      ...androidRequest,
+      requests: [{ protocol: 'openid4vp', data: 'eyJ...' }, isoMdocRequest],
+      selectedEntryIds: ['0 org-iso-mdoc mdl-1'],
+    }) as AndroidDcApiRequest
+
+    expect(request.requests).toEqual([isoMdocRequest])
   })
 
   test('keeps a missing origin absent, rather than blanking it', () => {
@@ -181,7 +192,56 @@ describe('parseRequest, on ios', () => {
     expect('selection' in request).toBe(false)
 
     mockNativeModule.approveRequest.mockResolvedValue(JSON.stringify([isoMdocRequest]))
-    expect(request.platform === 'ios' && (await request.approve())).toEqual([isoMdocRequest])
+    expect(request.kind === 'parsed' && (await request.approve())).toEqual([isoMdocRequest])
+  })
+
+  test('carries a raw OpenID4VP request in full, in the shape Android has', async () => {
+    const request = parseRequest({
+      platform: 'ios',
+      kind: 'raw',
+      protocol: 'openid4vp-v1-signed',
+      origin: 'https://digital-credentials.dev',
+      data: '{"request":"eyJ..."}',
+    })
+    if (request.kind !== 'raw') throw new Error('expected a raw request')
+
+    expect(request).toEqual({
+      platform: 'ios',
+      kind: 'raw',
+      origin: 'https://digital-credentials.dev',
+      requests: [{ protocol: 'openid4vp-v1-signed', data: { request: 'eyJ...' } }],
+      respond: expect.any(Function),
+      decline: expect.any(Function),
+    })
+
+    await request.respond({ protocol: 'openid4vp-v1-signed', data: { response: 'eyJ...' } })
+    expect(mockNativeModule.sendResponse).toHaveBeenCalledWith(
+      '{"protocol":"openid4vp-v1-signed","data":{"response":"eyJ..."}}'
+    )
+  })
+
+  test('carries a raw Annex C request as the request object, not a string', () => {
+    const request = parseRequest({
+      platform: 'ios',
+      kind: 'raw',
+      protocol: 'org-iso-mdoc',
+      origin: 'https://digital-credentials.dev',
+      data: JSON.stringify(isoMdocRequest.data),
+    })
+
+    expect(request).toMatchObject({ kind: 'raw', requests: [isoMdocRequest] })
+  })
+
+  test('leaves out a raw request over a protocol it does not know', () => {
+    const request = parseRequest({
+      platform: 'ios',
+      kind: 'raw',
+      protocol: 'some-future-protocol',
+      origin: 'https://digital-credentials.dev',
+      data: '{}',
+    })
+
+    expect(request).toMatchObject({ kind: 'raw', requests: [] })
   })
 })
 
@@ -193,7 +253,8 @@ describe('responding', () => {
     )
 
     const request = parseRequest(androidRequest)
-    // Only android can answer OpenID4VP, so the union has to be narrowed to say so.
+    // A parsed Annex C request on iOS can only be answered over org-iso-mdoc, so the union has to be
+    // narrowed to answer OpenID4VP.
     if (request.platform !== 'android') throw new Error('expected an android request')
 
     await request.respond({ protocol: 'openid4vp', data: { vp_token: {} } })

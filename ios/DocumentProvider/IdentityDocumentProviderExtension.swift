@@ -15,8 +15,8 @@ import SwiftUI
 private let backgroundColorHexLight = "{{BACKGROUND_COLOR_LIGHT}}"
 private let backgroundColorHexDark = "{{BACKGROUND_COLOR_DARK}}"
 
-/// Identity Document Provider extension (ISO/IEC TS 18013-7:2025 Annex C over the W3C Digital
-/// Credentials API).
+/// Identity Document Provider extension (ISO/IEC TS 18013-7:2025 Annex C, and OpenID4VP from iOS
+/// 27.3, over the W3C Digital Credentials API).
 ///
 /// The scene hosts the wallet's own React Native approval UI; the response itself is built in JS and
 /// handed back through the `DigitalCredentialsApi` expo module, the same one the host app uses.
@@ -35,11 +35,27 @@ struct IdentityDocumentProviderExtension: IdentityDocumentProvider {
     }
 
     var body: some IdentityDocumentRequestScene {
-        ISO18013MobileDocumentRequestScene { context in
-            DigitalCredentialsRequestView(requestContext: context)
-                .modifier(SceneBackground())
-                .ignoresSafeArea(edges: .bottom)
-        }
+        // See `RawRequestSession.swift` for the compiler check.
+        #if compiler(>=6.4.2)
+            // Raw requests from iOS 27.3. For Annex C, iOS then always shows the wallet selector.
+            if #available(iOS 27.3, *) {
+                ISO18013MobileDocumentRawRequestScene { context in
+                    DigitalCredentialsRequestView(requestContext: context).requestSceneStyle()
+                }
+                OpenID4VPRawRequestScene { context in
+                    DigitalCredentialsRequestView(requestContext: context).requestSceneStyle()
+                }
+            }
+            if #unavailable(iOS 27.3) {
+                ISO18013MobileDocumentRequestScene { context in
+                    DigitalCredentialsRequestView(requestContext: context).requestSceneStyle()
+                }
+            }
+        #else
+            ISO18013MobileDocumentRequestScene { context in
+                DigitalCredentialsRequestView(requestContext: context).requestSceneStyle()
+            }
+        #endif
     }
 
     /// The OS asking the provider to refresh what it can present. Nothing to do: the registration
@@ -47,6 +63,12 @@ struct IdentityDocumentProviderExtension: IdentityDocumentProvider {
     /// copy of the credentials to rebuild it from.
     func performRegistrationUpdates() async {
         dcApiLog.notice("extension: registration update requested; registrations are maintained by the app")
+    }
+}
+
+extension View {
+    fileprivate func requestSceneStyle() -> some View {
+        modifier(SceneBackground()).ignoresSafeArea(edges: .bottom)
     }
 }
 

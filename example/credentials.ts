@@ -11,6 +11,10 @@ import type { DcApiCredential } from '@animo-id/expo-digital-credentials-api'
 const icon =
   'data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD//gATQ3JlYXRlZCB3aXRoIEdJTVD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCABLAGQDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAWAQEBAQAAAAAAAAAAAAAAAAAABgj/2gAMAwEAAhADEAAAAZzC6pAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAABw/9oACAEBAAEFAgL/xAAUEQEAAAAAAAAAAAAAAAAAAABw/9oACAEDAQE/AQL/xAAUEQEAAAAAAAAAAAAAAAAAAABw/9oACAECAQE/AQL/xAAUEAEAAAAAAAAAAAAAAAAAAABw/9oACAEBAAY/AgL/xAAUEAEAAAAAAAAAAAAAAAAAAABw/9oACAEBAAE/IQL/2gAMAwEAAgADAAAAEP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/8QAFBEBAAAAAAAAAAAAAAAAAAAAcP/aAAgBAwEBPxAC/8QAFBEBAAAAAAAAAAAAAAAAAAAAcP/aAAgBAgEBPxAC/8QAFBABAAAAAAAAAAAAAAAAAAAAcP/aAAgBAQABPxAC/9k='
 
+// Fake issuer authority key identifiers, shared with example/verifier.
+const mdlIssuer = 'dXRvcGlhLW1kbC1pc3N1ZXItMDE=' // utopia-mdl-issuer-01
+const pidIssuer = 'dXRvcGlhLXBpZC1pc3N1ZXItMDE=' // utopia-pid-issuer-01
+
 const credentials: DcApiCredential[] = [
   {
     id: '1',
@@ -20,6 +24,7 @@ const credentials: DcApiCredential[] = [
       claims: [{ path: ['org.iso.18013.5.1', 'family_name'], displayName: 'Family Name' }],
       iconDataUrl: icon,
     },
+    issuerAuthorityKeyIdentifiers: [mdlIssuer],
     credential: {
       doctype: 'org.iso.18013.5.1.mDL',
       format: 'mso_mdoc',
@@ -42,8 +47,9 @@ const credentials: DcApiCredential[] = [
       ],
       iconDataUrl: icon,
     },
+    issuerAuthorityKeyIdentifiers: [pidIssuer],
     credential: {
-      vct: 'eu.europa.ec.eudi.pid.1',
+      vct: 'urn:eudi:pid:1',
       format: 'dc+sd-jwt',
       claims: {
         first_name: 'Timo',
@@ -70,6 +76,7 @@ const credentials: DcApiCredential[] = [
       ],
       iconDataUrl: icon,
     },
+    issuerAuthorityKeyIdentifiers: [pidIssuer],
     credential: {
       doctype: 'eu.europa.ec.eudi.pid.1',
       format: 'mso_mdoc',

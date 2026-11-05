@@ -38,41 +38,9 @@ final class DocumentRequestSession: DcApiRequestSession, @unchecked Sendable {
         self.originURL = originURL
     }
 
-    /// The web origin, serialized the way the browser sends it: `scheme://host`, with the port only
-    /// when it is not the scheme's default, and never a path.
-    ///
-    /// The OS reports the origin as a `URL`, and a URL is not an origin: a hierarchical URL carries a
-    /// path, so `absoluteString` hands back `https://example.com/`. That trailing slash is not
-    /// cosmetic — ISO/IEC TS 18013-7:2025 C.5 hashes the origin verbatim into the session transcript,
-    /// and the verifier hashes the `Origin` header the browser sent it, which has no slash. Binding
-    /// the URL form yields a transcript the verifier never computes, and the response it gets back
-    /// cannot be decrypted at all.
-    ///
-    /// Falls back to the URL as-is when it has no scheme or host, which no origin the OS reports
-    /// should hit — there is simply nothing better to bind at that point.
-    var origin: String {
-        guard let components = URLComponents(url: originURL, resolvingAgainstBaseURL: false),
-            let scheme = components.scheme,
-            // `encodedHost` over `host`, which decodes: an IPv6 host comes back without its brackets
-            // and a punycode host percent-decoded, neither of which is what the browser serialized.
-            let host = components.encodedHost ?? components.host
-        else {
-            return originURL.absoluteString
-        }
+    var origin: String { webOrigin(originURL) }
 
-        let defaultPort: Int? = scheme == "https" ? 443 : (scheme == "http" ? 80 : nil)
-        guard let port = components.port, port != defaultPort else {
-            return "\(scheme)://\(host)"
-        }
-
-        return "\(scheme)://\(host):\(port)"
-    }
-
-    var requestedDocumentTypes: [String] {
-        context.request.presentmentRequests.flatMap { presentment in
-            presentment.documentRequestSets.flatMap { set in set.requests.map(\.documentType) }
-        }
-    }
+    let exchangeProtocol = "org-iso-mdoc"
 
     /// The parsed request, as the JS side reads it.
     ///
@@ -108,6 +76,7 @@ final class DocumentRequestSession: DcApiRequestSession, @unchecked Sendable {
 
         let payload: [String: Any] = [
             "platform": "ios",
+            "kind": "parsed",
             "origin": origin,
             "presentmentRequests": presentmentRequests,
             "readerAuthentications": readerAuthentications,

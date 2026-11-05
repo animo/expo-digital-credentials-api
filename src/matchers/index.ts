@@ -30,10 +30,10 @@ export function encodeCredentialsBase64(
   // Issuer identifiers only narrow what a verifier's `trusted_authorities` matches, which the other
   // matchers ignore anyway. A reader gate they would drop silently, offering the credential to every
   // reader instead of the ones it was meant for.
-  const gated = credentials.find((credential) => credential.android?.supportedAuthorityKeyIdentifiers?.length)
+  const gated = credentials.find((credential) => credential.supportedAuthorityKeyIdentifiers?.length)
   if (matcher !== 'multipaz' && gated) {
     throw new Error(
-      `The '${matcher}' matcher cannot gate credential '${gated.id}' on its reader. Only 'multipaz' supports android.supportedAuthorityKeyIdentifiers.`
+      `The '${matcher}' matcher cannot gate credential '${gated.id}' on its reader. Only 'multipaz' supports supportedAuthorityKeyIdentifiers.`
     )
   }
 

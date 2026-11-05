@@ -35,7 +35,14 @@ export function encodeMultipazCredentials(credentials: DcApiCredential[], protoc
   })
 }
 
-function encodeCredential({ id, display, credential, android }: DcApiCredential): CborValue {
+function encodeCredential({
+  id,
+  display,
+  credential,
+  issuerAuthorityKeyIdentifiers,
+  supportedAuthorityKeyIdentifiers,
+  android,
+}: DcApiCredential): CborValue {
   const common: { [key: string]: CborValue } = {
     title: display.title,
     subtitle: display.subtitle ?? '',
@@ -49,13 +56,13 @@ function encodeCredential({ id, display, credential, android }: DcApiCredential)
   }
 
   const identifiers: CborValue = {}
-  if (android?.issuerAuthorityKeyIdentifiers?.length) {
-    identifiers.issuerIdentifiers = android.issuerAuthorityKeyIdentifiers.map((value) =>
+  if (issuerAuthorityKeyIdentifiers?.length) {
+    identifiers.issuerIdentifiers = issuerAuthorityKeyIdentifiers.map((value) =>
       decodeIdentifier(value, 'issuerAuthorityKeyIdentifiers', id)
     )
   }
-  if (android?.supportedAuthorityKeyIdentifiers?.length) {
-    identifiers.readerIdentifiers = android.supportedAuthorityKeyIdentifiers.map((value) =>
+  if (supportedAuthorityKeyIdentifiers?.length) {
+    identifiers.readerIdentifiers = supportedAuthorityKeyIdentifiers.map((value) =>
       decodeIdentifier(value, 'supportedAuthorityKeyIdentifiers', id)
     )
   }
@@ -159,7 +166,7 @@ function decodeIdentifier(value: string, option: string, credentialId: string): 
   try {
     return decodeBase64(value)
   } catch {
-    throw new TypeError(`'android.${option}' holds '${value}', which is not base64, for credential '${credentialId}'`)
+    throw new TypeError(`'${option}' holds '${value}', which is not base64, for credential '${credentialId}'`)
   }
 }
 

@@ -1,10 +1,9 @@
 import { Platform } from 'react-native'
 import { iosSupportedDocumentTypes } from './iosDocumentTypes'
 import { defaultMatcher, encodeCredentialsBase64, matcherProtocols } from './matchers'
-import nativeModule, { type IosDocumentRegistration, getNativeModule } from './nativeModule'
+import nativeModule, { type IosDocumentRegistration, type IosRegistrationType, getNativeModule } from './nativeModule'
 import type {
   DcApiCredential,
-  DcApiMdocCredential,
   RegisterCredentialOptions,
   RegisterCredentialsOptions,
   RegistrationStatus,
@@ -17,6 +16,16 @@ import { DcApiUnsupportedError } from './util'
  */
 export function isSupported(): boolean {
   return nativeModule?.isSupported() ?? false
+}
+
+/**
+ * Whether OpenID4VP requests can be answered and `dc+sd-jwt` credentials registered: on iOS from
+ * 27.3, built with its SDK, on Android wherever {@link isSupported}.
+ */
+export function isOpenId4VpSupported(): boolean {
+  if (Platform.OS !== 'ios') return isSupported()
+
+  return nativeModule?.isOpenId4VpSupported?.() ?? false
 }
 
 /**
@@ -37,10 +46,10 @@ export async function getRegistrationStatus(): Promise<RegistrationStatus> {
  * previously registered set.
  *
  * Credentials the platform cannot present are skipped rather than rejected, so a wallet can pass its
- * whole set on both platforms. On iOS that means everything except `mso_mdoc` credentials whose
- * document type the app is entitled to provide — the config plugin's `ios.documentTypes`, a subset
- * of {@link iosSupportedDocumentTypes}. The OS does the matching there, and only knows those. The
- * first call on iOS triggers the system permission prompt.
+ * whole set on both platforms. On iOS that registers the `mso_mdoc` credentials whose document type
+ * is in the config plugin's `ios.documentTypes`, and from iOS 27.3 the `dc+sd-jwt` credentials whose
+ * `vct` or one of its `extendedVcts` is in `ios.verifiableCredentialTypes`. The first call on iOS
+ * triggers the system permission prompt.
  *
  * Only what the OS matches on leaves the app: the document identifier and type, and the gates in
  * {@link DcApiCredential.ios}. The credentials themselves stay in the wallet's own storage, which is
@@ -60,10 +69,7 @@ export async function registerCredentials(options: RegisterCredentialsOptions): 
   }
 
   if (Platform.OS === 'ios') {
-    const documentTypes = entitledDocumentTypes(module)
-    const registrations = options.credentials
-      .filter((credential) => isRegistrableOnIos(credential, documentTypes))
-      .map(toDocumentRegistration)
+    const registrations = options.credentials.flatMap((credential) => toDocumentRegistration(module, credential) ?? [])
 
     await module.registerDocuments(registrations)
     return registrations.map((registration) => registration.documentIdentifier)
@@ -100,14 +106,14 @@ export async function registerCredential(options: RegisterCredentialOptions): Pr
     )
   }
 
-  const documentTypes = entitledDocumentTypes(module)
-  if (!isRegistrableOnIos(options.credential, documentTypes)) {
+  const registration = toDocumentRegistration(module, options.credential)
+  if (!registration) {
     throw new DcApiUnsupportedError(
-      `Credential '${options.credential.id}' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: ${documentTypes.join(', ')}. Document types are configured with the config plugin's 'ios.documentTypes'.`
+      `Credential '${options.credential.id}' cannot be registered on iOS. Only 'mso_mdoc' credentials with one of these document types can: ${entitledDocumentTypes(module).join(', ')}, and on iOS 27.3 and later 'dc+sd-jwt' credentials of one of these types: ${entitledVerifiableCredentialTypes(module).join(', ') || 'none'}. They are configured with the config plugin's 'ios.documentTypes' and 'ios.verifiableCredentialTypes'.`
     )
   }
 
-  await module.addDocument(toDocumentRegistration(options.credential))
+  await module.addDocument(registration)
 }
 
 /**
@@ -156,18 +162,36 @@ export function getSharedContainerPath(): string {
   return getNativeModule('getSharedContainerPath').getSharedContainerPath()
 }
 
-/**
- * The OS stores both gates with each document, so they come from the credential itself.
- */
+/** The registration the OS stores for a credential, or `undefined` when this build cannot register it. */
 function toDocumentRegistration(
-  credential: DcApiCredential & { credential: DcApiMdocCredential }
-): IosDocumentRegistration {
+  module: ReturnType<typeof getNativeModule>,
+  credential: DcApiCredential
+): IosDocumentRegistration | undefined {
+  const { format } = credential.credential
+  let type: IosRegistrationType
+
+  if (format === 'mso_mdoc') {
+    if (!entitledDocumentTypes(module).includes(credential.credential.doctype)) return undefined
+    type = { format, documentType: credential.credential.doctype }
+  } else {
+    if (!isOpenId4VpSupported()) return undefined
+
+    // A request for a type the credential extends matches it too, as on Android.
+    const entitled = entitledVerifiableCredentialTypes(module)
+    const verifiableCredentialTypes = [credential.credential.vct, ...(credential.credential.extendedVcts ?? [])].filter(
+      (vct) => entitled.includes(vct)
+    )
+    if (verifiableCredentialTypes.length === 0) return undefined
+    type = { format, verifiableCredentialTypes }
+  }
+
   const invalidationDate = encodeInvalidationDate(credential.ios?.invalidationDate, credential.id)
 
   return {
     documentIdentifier: credential.id,
-    documentType: credential.credential.doctype,
-    supportedAuthorityKeyIdentifiers: credential.ios?.supportedAuthorityKeyIdentifiers ?? [],
+    ...type,
+    supportedIssuerKeyIdentifiers: credential.issuerAuthorityKeyIdentifiers ?? [],
+    supportedAuthorityKeyIdentifiers: credential.supportedAuthorityKeyIdentifiers ?? [],
     ...(invalidationDate ? { invalidationDate } : {}),
   }
 }
@@ -199,13 +223,9 @@ function entitledDocumentTypes(module: { getEntitledDocumentTypes?(): string[] |
   return module.getEntitledDocumentTypes?.() ?? iosSupportedDocumentTypes
 }
 
-/**
- * The OS matches on document type, so only mdocs with a type this build is entitled to provide can
- * be registered at all.
- */
-function isRegistrableOnIos(
-  credential: DcApiCredential,
-  documentTypes: readonly string[]
-): credential is DcApiCredential & { credential: DcApiMdocCredential } {
-  return credential.credential.format === 'mso_mdoc' && documentTypes.includes(credential.credential.doctype)
+/** The same for SD-JWT VC types, without a fallback: Apple publishes no allowed set. */
+function entitledVerifiableCredentialTypes(module: {
+  getEntitledVerifiableCredentialTypes?(): string[] | null
+}): readonly string[] {
+  return module.getEntitledVerifiableCredentialTypes?.() ?? []
 }
